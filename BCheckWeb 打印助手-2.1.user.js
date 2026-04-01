@@ -5,6 +5,7 @@
 // @description  穿透 frameset 架构，精准提取 content_frame 中的 FS 和 RL 数据
 // @author       Gemini
 // @match        http://60.247.100.98/BCheckWeb/*
+// @match        http://202.96.17.98/BCheckWeb/*
 // @grant        GM_addStyle
 // @run-at       document-end
 // ==/UserScript==
@@ -101,6 +102,7 @@
                 h3 { text-align: center; font-size: 20px; font-weight: bold; margin-bottom: 30px; }
                 table { width: 100%; border-collapse: collapse; table-layout: fixed; }
                 td { border: 1px solid #808080; padding: 8px; font-size: 14px; height: 22px; }
+                td[contenteditable="true"]:focus { outline: 2px solid #4a90e2; background: #f8fbff; }
                 .title-table td:nth-child(1) { width: 25%; }
                 .title-table td:nth-child(2) { width: 75%; font-size: 18px; }
                 .info-table td:nth-child(1){ width: 10%; }
@@ -109,6 +111,16 @@
                 .info-table td:nth-child(4){ width: 10%; }
                 .footer-table td { border: none; border-bottom: 1px solid #ADADAD; }
                 .section-bar { border: 1px solid #ADADAD; text-align: center; font-size: 12px; padding: 5px; margin-top: 20px; font-weight: bold; background: #f0f0f0; }
+                #print-cover-btn {
+                    position: fixed; right: 18px; bottom: 18px; z-index: 9999;
+                    min-width: 110px; min-height: 42px; border: none; border-radius: 8px;
+                    background: #28a745; color: #fff; font-size: 14px; font-weight: bold;
+                    cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.28);
+                }
+                @media print {
+                    #print-cover-btn { display: none !important; }
+                    td[contenteditable="true"]:focus { outline: none; background: transparent; }
+                }
             </style>
         </head>
         <body>
@@ -129,7 +141,19 @@
                 <tr><td>Baggage Delivery Order (BDO):</td><td>&nbsp;</td><td>Reason Lost (RL):</td><td>${data.reason}</td></tr>
                 <tr><td>Delivery Cost:</td><td>&nbsp;</td><td>Close Date:</td><td>&nbsp;</td></tr>
             </table>
-            <script>window.onload = () => { window.print(); window.close(); };</script>
+            <button id="print-cover-btn" type="button">打印封面</button>
+            <script>
+                window.onload = () => {
+                    document.querySelectorAll('td').forEach((cell) => {
+                        cell.setAttribute('contenteditable', 'true');
+                    });
+                    const printBtn = document.getElementById('print-cover-btn');
+                    if (printBtn) {
+                        printBtn.addEventListener('click', () => window.print());
+                    }
+                    window.print();
+                };
+            </script>
         </body>
         </html>`;
     }
