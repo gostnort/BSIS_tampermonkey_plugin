@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BCheckWeb 打印助手
 // @namespace    http://tampermonkey.net/
-// @version      2.2
+// @version      2.3
 // @description  穿透 frameset 架构，精准提取 content_frame 中的 FS 和 RL 数据
 // @author       Gemini
 // @match        http://60.247.100.98/BCheckWeb/*
@@ -50,32 +50,43 @@
         const amountSelect = cd.getElementById('l_baggageSelect');
         const amount = amountSelect ? (amountSelect.options[amountSelect.selectedIndex]?.value || amountSelect.value) : "";
 
-        // --- 3. 日志文本抓取 (用于 FS 和 RL) ---
+        const readFirstNonEmpty = (selectors) => {
+            for (const selector of selectors) {
+                const elements = Array.from(cd.querySelectorAll(selector));
+                for (const element of elements) {
+                    const raw = (typeof element.value === 'string' ? element.value : element.textContent) || "";
+                    const trimmed = raw.trim();
+                    if (trimmed) return trimmed;
+                }
+            }
+            return "";
+        };
+        const normalizeFS = (value) => value.replace(/[^a-zA-Z]/g, "").toUpperCase();
+        const normalizeRL = (value) => value.trim().replace(/\D+/g, "");
+        const getFSFromText = (text) => {
+            const match = text.match(/FS:\s*([A-Z]{3})/i);
+            return match ? normalizeFS(match[1]) : "";
+        };
+        const getRLFromText = (text) => {
+            const matches = text.match(/RL:\s*(\d+)/gi);
+            if (!matches || matches.length === 0) return "";
+            const lastRL = matches[matches.length - 1];
+            const captured = (lastRL.match(/RL:\s*(\d+)/i) || [])[1] || "";
+            return normalizeRL(captured);
+        };
+        // --- 3. 日志文本抓取 (用于 FS 和 RL 兜底) ---
         const logTextArea = cd.querySelector('textarea.textArea');
-        const logText = logTextArea ? logTextArea.value : fullText;
+        const logText = logTextArea ? logTextArea.value : "";
 
         // --- 4. 责任航站 (FS) 抓取 ---
-        // 匹配 FS: 后跟 3 位字母，例如 FS:PEK
-        let faultStation = "";
-        const fsMatch = logText.match(/FS:\s*([A-Z]{3})/);
-        if (fsMatch) {
-            faultStation = fsMatch[1].toUpperCase();
-        } else {
-            const fsInput = cd.getElementById('rStation');
-            faultStation = fsInput ? fsInput.value.trim().toUpperCase() : "";
-        }
+        let faultStation = normalizeFS(readFirstNonEmpty(['input[name="lbDetail.dutyStation"]', '#rStation']));
+        if (!faultStation) faultStation = getFSFromText(logText);
+        if (!faultStation) faultStation = getFSFromText(fullText);
 
         // --- 5. 事故代码 (RL) 抓取 ---
-        // 匹配所有 RL:数字，并取最后一个（最新记录），例如 RL:53
-        let reason = "";
-        const rlMatches = logText.match(/RL:\s*(\d+)/g);
-        if (rlMatches && rlMatches.length > 0) {
-            const lastRL = rlMatches[rlMatches.length - 1];
-            reason = lastRL.replace(/RL:\s*/, "");
-        } else {
-            const rlInput = cd.getElementById('rAccCode');
-            reason = rlInput ? rlInput.value.trim() : "";
-        }
+        let reason = normalizeRL(readFirstNonEmpty(['input[name="lbDetail.accidentCode"]', '#rAccCode']));
+        if (!reason) reason = getRLFromText(logText);
+        if (!reason) reason = getRLFromText(fullText);
 
         // --- 6. 航班日期与档案号 ---
         const rawDate = cd.getElementById('pir-flightAndDate')?.textContent.trim() || "";
