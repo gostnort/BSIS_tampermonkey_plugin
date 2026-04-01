@@ -103,7 +103,7 @@
             }
             #${OVERLAY_ID} {
                 position: fixed!important; inset: 0!important; z-index: 2147483646!important;
-                display: none; background: rgba(200, 200, 200, 0.4)!important; backdrop-filter: blur(10px);
+                display: none; background: rgba(200, 200, 200, 0.3)!important; backdrop-filter: blur(10px);
             }
             .tmk-page {
                 width: 100vw!important; height: 100%!important; overflow-y: auto!important;
@@ -169,7 +169,24 @@
         state.showingSub = true; fab.textContent = '‹';
     }
 
-    // --- 5. 菜单渲染与绑定 ---
+    // --- 5. 颜色分类 ---
+    function classForGroup(title) {
+        if (/少收|多收|破损|速运行李/.test(title)) return 'tmk-core';
+        if (/信息|核对|文件|报销/.test(title)) return 'tmk-data';
+        if (/统计|查询|维护|系统/.test(title)) return 'tmk-system';
+        return 'tmk-aux';
+    }
+
+
+    function classForTile(title, groupTitle) {
+        if (/退出系统/.test(title)) return 'tmk-system';
+        if (/快速查找|信息处理/.test(title)) return 'tmk-aux';
+        if (/统计查询/.test(title)) return 'tmk-data';
+        return classForGroup(groupTitle || title);
+    }
+
+
+    // --- 6. 菜单渲染与绑定 ---
     function renderTiles(doc, overlay, fab) {
         const rootGrid = doc.getElementById(ROOT_GRID_ID);
         const pinnedGrid = doc.getElementById('tmk-pinned-grid');
@@ -191,7 +208,7 @@
         // 常驻区
         if (lostG) {
             lostG.links.slice(0, 3).forEach(l => {
-                pinnedGrid.appendChild(buildTile(doc, l.text, 'tmk-core', () => {
+                pinnedGrid.appendChild(buildTile(doc, l.text, classForTile(l.text, lostG.title), () => {
                     navigateToContent(l.href); closeOverlay(overlay, fab);
                 }));
             });
@@ -203,11 +220,11 @@
         // 主菜单
         groups.forEach(g => {
             if (lostG && g.title === lostG.title) return;
-            rootGrid.appendChild(buildTile(doc, g.title, 'tmk-core', () => {
+            rootGrid.appendChild(buildTile(doc, g.title, classForTile(g.title, g.title), () => {
                 const subGrid = doc.getElementById(SUB_GRID_ID);
                 subGrid.innerHTML = '';
                 g.links.forEach(l => {
-                    subGrid.appendChild(buildTile(doc, l.text, 'tmk-data', () => {
+                    subGrid.appendChild(buildTile(doc, l.text, classForTile(l.text, g.title), () => {
                         navigateToContent(l.href); closeOverlay(overlay, fab);
                     }));
                 });
