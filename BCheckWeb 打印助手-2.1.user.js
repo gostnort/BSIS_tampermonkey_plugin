@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BCheckWeb 打印助手
 // @namespace    http://tampermonkey.net/
-// @version      2.1
+// @version      2.2
 // @description  穿透 frameset 架构，精准提取 content_frame 中的 FS 和 RL 数据
 // @author       Gemini
 // @match        http://60.247.100.98/BCheckWeb/*
