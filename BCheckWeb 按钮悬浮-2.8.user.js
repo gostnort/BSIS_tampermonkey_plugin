@@ -78,16 +78,19 @@
             gap: 6px !important;
             margin-top: 4px !important;
         }
-        #qf-clear-btn {
+        #qf-preview-btn {
             width: 100% !important;
             min-height: 30px !important;
-            border: 1px solid rgba(217, 83, 79, 0.4) !important;
+            border: 2px solid rgba(255, 255, 255, 0.4) !important;
             border-radius: 6px !important;
-            background: rgba(252, 234, 234, 0.4) !important;
-            color: #a94442 !important;
-            font-size: 12px !important;
+            background-color: rgba(0, 123, 255, 0.4) !important;
+            color: #ffffff !important;
+            font-size: 14px !important;
             font-weight: bold !important;
             cursor: pointer !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
+            padding: 5px !important;
+            box-sizing: border-box !important;
         }
         #clone-btn-host {
             display: flex !important;
@@ -118,9 +121,9 @@
             background-color: #0056b3 !important;
             border-color: #ffffff !important;
         }
-        #qf-clear-btn:hover {
-            border-color: #d9534f !important;
-            background: #fceaea !important;
+        #qf-preview-btn:hover {
+            border-color: #ffffff !important;
+            background-color: #0056b3 !important;
         }
         .my-clone-btn.finish-clone {
             background-color: rgba(40, 167, 69, 0.4) !important;
@@ -146,9 +149,9 @@
         <label class="qf-label" for="qf-cp">CP 移动电话</label>
         <input id="qf-cp" type="text" value="${DEFAULT_CP}">
         <div class="qf-action-row">
-            <button id="qf-clear-btn" type="button">清空上面</button>
+            <button id="qf-preview-btn" type="button">内容预览</button>
         </div>
-        <div id="quick-fill-hint">点击这个“完成”按钮时自动执行 CT 分配、NW 计算与联系方式填充。</div>
+        <div id="quick-fill-hint">点击“内容预览”可先把上方内容填入网页；点击“完成”时会再次执行填充后再提交。</div>
     `;
     const cloneHost = document.createElement('div');
     cloneHost.id = 'clone-btn-host';
@@ -160,7 +163,7 @@
         pa: quickPanel.querySelector('#qf-pa'),
         family: quickPanel.querySelector('#qf-family'),
         cp: quickPanel.querySelector('#qf-cp'),
-        clearBtn: quickPanel.querySelector('#qf-clear-btn')
+        previewBtn: quickPanel.querySelector('#qf-preview-btn')
     };
     let capsLockActive = false;
 
@@ -324,47 +327,11 @@
     }
 
 
-    function clearQuickInputs() {
-        quickInputs.ct.value = '';
-        quickInputs.pa.value = '';
-        quickInputs.family.value = '';
-        quickInputs.cp.value = DEFAULT_CP;
-        capsLockActive = false;
-    }
-
-
-    function clearWholePage(cd) {
-        const fields = Array.from(cd.querySelectorAll('input, textarea, select'));
-        fields.forEach((field) => {
-            const tag = field.tagName.toLowerCase();
-            if (tag === 'select') {
-                field.selectedIndex = 0;
-                fireInputEvents(field);
-                return;
-            }
-            const type = (field.getAttribute('type') || 'text').toLowerCase();
-            if (type === 'hidden' || type === 'button' || type === 'submit' || type === 'reset') return;
-            if (type === 'checkbox' || type === 'radio') {
-                field.checked = false;
-                fireInputEvents(field);
-                return;
-            }
-            field.value = '';
-            fireInputEvents(field);
-        });
-    }
-
-
-    function askClearScope() {
-        const answer = window.prompt('请选择清空范围：\n1 = 清空快捷填充\n2 = 清空整个网页\n其他 = 取消', '1');
-        if (answer === '1') {
-            clearQuickInputs();
+    function previewQuickFill() {
+        const result = applyQuickFill();
+        if (!result.ok) {
+            window.alert(result.message);
             return;
-        }
-        if (answer === '2') {
-            const cd = getWorkingDoc();
-            clearWholePage(cd);
-            clearQuickInputs();
         }
     }
 
@@ -443,7 +410,7 @@
     quickInputs.ct.addEventListener('keyup', (event) => {
         capsLockActive = !!event.getModifierState && event.getModifierState('CapsLock');
     });
-    quickInputs.clearBtn.addEventListener('click', askClearScope);
+    quickInputs.previewBtn.addEventListener('click', previewQuickFill);
 
 
     function snatch() {
