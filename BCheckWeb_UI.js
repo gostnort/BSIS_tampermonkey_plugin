@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         BCheckWeb UI 瓷砖菜单 - 0.7.0 最终版
+// @name         BCheckWeb UI 瓷砖菜单 - 0.7.1
 // @namespace    http://tampermonkey.net/
-// @version      0.7.0
+// @version      0.7.1
 // @description  修复按钮位置 | 标题动态联动 | 黄金比例间距 | 链接逻辑修复
 // @author       Gostnort
 // @match        http://60.247.100.98/BCheckWeb/*
@@ -20,11 +20,13 @@
     if (!inTopWindow && !inContentFrame) return;
 
     const FAB_ID = 'tmk-fab';
+    const SEARCH_FAB_ID = 'tmk-search-fab';
+    const SEARCH_INPUT_ID = 'tmk-search-input';
     const OVERLAY_ID = 'tmk-overlay';
     const ROOT_GRID_ID = 'tmk-root-grid';
     const SUB_GRID_ID = 'tmk-sub-grid';
 
-    const state = { overlayOpen: false, showingSub: false, currentGroup: null };
+    const state = { overlayOpen: false, showingSub: false, currentGroup: null, searchExpanded: false };
 
     // --- 1. 链接提取：使用 a.href DOM属性（浏览器已按 frame 自身 baseURI 解析好的绝对URL）---
     function extractHref(anchor) {
@@ -115,16 +117,40 @@
                 padding-left: clamp(80px, 12vw, 160px) !important;
             }
             #${FAB_ID} {
-                position: fixed !important; left: 30px !important; top: 30px !important;
-                z-index: 2147483647 !important; width: 48px !important; height: 48px !important;
+                position: fixed !important; left: 30px !important; top: 20px !important;
+                z-index: 2147483647 !important; width: 46px !important; height: 46px !important;
                 display: flex !important; align-items: center !important; justify-content: center !important;
-                background: rgba(var(--tmk-blue), 0.15) !important; color: #fff !important;
-                border: 1px solid rgba(255, 255, 255, 0.3) !important; border-radius: 50% !important;
-                font-family: "Segoe UI Light", sans-serif !important; font-size: 32px !important;
+                background: #f4f6f8 !important; color: #4f5d70 !important;
+                border: 1px solid #cfd7df !important; border-radius: 999px !important;
+                font-family: "Segoe UI Light", sans-serif !important; font-size: 30px !important;
                 font-weight: 100 !important; cursor: pointer !important;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+                transition: background 0.2s ease, border-color 0.2s ease !important;
             }
-            #${FAB_ID}:hover { background: rgba(var(--tmk-blue), 0.8) !important; transform: translateX(-5px) !important; }
+            #${FAB_ID}:hover { background: #eef3f8 !important; border-color: #aebac8 !important; }
+            #${SEARCH_FAB_ID} {
+                position: fixed !important; right: 20px !important; top: 20px !important;
+                z-index: 2147483647 !important; width: 46px !important; height: 46px !important;
+                display: inline-flex !important; align-items: center !important; justify-content: center !important;
+                color: #4f5d70 !important; font-size: 23px !important; line-height: 1 !important;
+                background: #f4f6f8 !important;
+                border: 1px solid #cfd7df !important; border-radius: 999px !important;
+                box-shadow: none !important; cursor: pointer !important; transition: background 0.2s ease, border-color 0.2s ease !important;
+            }
+            #${SEARCH_FAB_ID}.tmk-search-active {
+                background: #eef3f8 !important;
+                border-color: #aebac8 !important;
+            }
+            #${SEARCH_INPUT_ID} {
+                position: fixed !important; right: 72px !important; top: 26px !important;
+                z-index: 2147483647 !important; width: 340px !important; height: 34px !important;
+                box-sizing: border-box !important; border-radius: 6px !important;
+                border: 1px solid #b8c5d4 !important;
+                padding: 0 10px !important; background: #ffffff !important;
+                color: #1d2a38 !important; outline: none !important;
+            }
+            #${SEARCH_INPUT_ID}::placeholder {
+                color: #8a97a6 !important;
+            }
             .tmk-h1 {
                 font-size: ${m.h1Size}px !important; font-weight: 100 !important; color: #fff !important;
                 margin: 0 0 10px 0 !important; letter-spacing: -1px !important;
@@ -243,6 +269,190 @@
 
     function closeOverlay(overlay, fab) {
         overlay.style.display = 'none'; state.overlayOpen = false; fab.textContent = '☰';
+        setSearchShortcutVisible(false);
+    }
+
+    function isVisibleElement(el) {
+        if (!el) return false;
+        if (el.offsetParent === null) return false;
+        const style = window.getComputedStyle(el);
+        if (!style) return false;
+        return style.display !== 'none' && style.visibility !== 'hidden';
+    }
+
+    function findBrsTargets(doc) {
+        if (!doc) return null;
+        const inputs = Array.from(doc.querySelectorAll('#brsBagNumSearch')).filter(isVisibleElement);
+        const buttons = Array.from(doc.querySelectorAll('#brsButton')).filter(isVisibleElement);
+        if (!inputs.length || !buttons.length) return null;
+        for (const input of inputs) {
+            const host = input.closest('form, .ui-grid-b, .tab-pane, .panel, div') || doc.body;
+            const matchedBtn = buttons.find((btn) => host.contains(btn));
+            if (matchedBtn) return { input, button: matchedBtn };
+        }
+        return { input: inputs[0], button: buttons[0] };
+    }
+
+    function collapseSearch(searchFab, searchInput) {
+        state.searchExpanded = false;
+        searchFab.classList.remove('tmk-search-active');
+        searchInput.style.display = 'none';
+        searchInput.value = '';
+    }
+
+    function setSearchShortcutVisible(visible) {
+        const searchFab = document.getElementById(SEARCH_FAB_ID);
+        const searchInput = document.getElementById(SEARCH_INPUT_ID);
+        if (!searchFab) return;
+        searchFab.style.setProperty('display', visible ? 'inline-flex' : 'none', 'important');
+        if (!visible && searchInput) collapseSearch(searchFab, searchInput);
+    }
+
+    function findVisibleExactTextNode(doc, targetText) {
+        if (!doc || !targetText) return null;
+        const selectors = [
+            'a',
+            'button',
+            'input[type="button"]',
+            'input[type="submit"]',
+            'li',
+            'label',
+            'span'
+        ];
+        const candidates = Array.from(doc.querySelectorAll(selectors.join(',')));
+        return candidates.find((el) => {
+            if (el.offsetParent === null) return false;
+            const text = (el.textContent || el.value || '').replace(/\s+/g, '').trim();
+            return text === targetText;
+        }) || null;
+    }
+
+    function getTabHandleByText(doc, targetText) {
+        const node = findVisibleExactTextNode(doc, targetText);
+        if (!node) return null;
+        const clickable = node.closest('a, button, li, label') || node;
+        return { node, clickable };
+    }
+
+    function isTabActiveByText(doc, targetText) {
+        const handle = getTabHandleByText(doc, targetText);
+        if (!handle) return false;
+        const className = String(handle.clickable.className || '').toLowerCase();
+        const ariaSelected = handle.clickable.getAttribute('aria-selected') === 'true';
+        const ariaPressed = handle.clickable.getAttribute('aria-pressed') === 'true';
+        const byClass = /active|selected|current|focus|on/.test(className);
+        return ariaSelected || ariaPressed || byClass;
+    }
+
+    function activateTabByText(doc, targetText) {
+        const handle = getTabHandleByText(doc, targetText);
+        if (!handle) return false;
+        if (isTabActiveByText(doc, targetText)) return true;
+        handle.clickable.click();
+        return true;
+    }
+
+    function activateTrackingTab(doc) {
+        return activateTabByText(doc, '行李追踪数据');
+    }
+
+    function activatePageTab(doc, targetText) {
+        return activateTabByText(doc, targetText);
+    }
+
+    function submitSearchWithRetry(value, searchFab, searchInput, retries) {
+        const targets = findBrsTargets(document);
+        if (targets) {
+            // 同步赋值并触发输入事件，兼容页面监听逻辑
+            targets.input.value = value;
+            targets.input.dispatchEvent(new Event('input', { bubbles: true }));
+            targets.input.dispatchEvent(new Event('change', { bubbles: true }));
+            targets.button.click();
+            collapseSearch(searchFab, searchInput);
+            // 查询触发后自动收起开始页，减少手动关闭操作
+            const overlay = document.getElementById(OVERLAY_ID);
+            const fab = document.getElementById(FAB_ID);
+            if (overlay && fab && state.overlayOpen) closeOverlay(overlay, fab);
+            return;
+        }
+        if (retries <= 0) {
+            alert('未找到“查询BRS记录”输入框或按钮。');
+            collapseSearch(searchFab, searchInput);
+            return;
+        }
+        setTimeout(() => submitSearchWithRetry(value, searchFab, searchInput, retries - 1), 260);
+    }
+
+    function submitSearch(searchFab, searchInput) {
+        const value = (searchInput.value || '').trim();
+        if (!value) {
+            collapseSearch(searchFab, searchInput);
+            return;
+        }
+        // 仅处理“行李追踪数据”标签：不切换页面。
+        // 这里不把“激活态判断”作为硬门槛，避免页面样式差异导致误报。
+        if (isTabActiveByText(document, '行李追踪数据')) {
+            submitSearchWithRetry(value, searchFab, searchInput, 2);
+            return;
+        }
+
+        const clicked = activateTrackingTab(document);
+        if (!clicked) {
+            alert('未找到“行李追踪数据”标签页。');
+            collapseSearch(searchFab, searchInput);
+            return;
+        }
+
+        // 点击标签后直接进入提交重试链路，是否真的切到目标区由元素匹配决定
+        setTimeout(() => submitSearchWithRetry(value, searchFab, searchInput, 2), 700);
+    }
+
+    function bindSearchShortcut(doc) {
+        if (!doc || !doc.body || doc.getElementById(SEARCH_FAB_ID)) return;
+
+        const searchFab = doc.createElement('button');
+        searchFab.id = SEARCH_FAB_ID;
+        searchFab.type = 'button';
+        searchFab.title = '查询BRS记录';
+        searchFab.innerHTML = '<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAC0AAAAvCAYAAAB30kORAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAHOSURBVGhD7ZbBrcMgDEDd/6+5swVbIHWIbBGp554jZQu2YAsG6N1T5F9q5Fg0BcInisSTeghBzQOM7du6ritcjB85cAW6dCu6dCu6dCu6dCu6dCu6dCsuKX072poiIjjnABEBEUEpBUop0FqD1lpOr0KxNCLCsizgvZevAkopmKapunyRtHMOlmWRwx8ZxxHGcZTDxWRLW2vBWhuelVJgjAkh4b3fhAxRUzxL2nsPj8cjPGutYZ7nzRyCxPkC53muEipZ2YML7AnD+wTk7uaE1B7J0oi4uXR7whwKHYj8RynJ0vxjxpjNuz0o5onTpHPjks9vKs0zQa40hUctkqX5h/kCUuC7W2MBRdJHjjj3lGIkS/PL5JzbvPsGn998p2mXqO9IwVobTqZWE5UsDe9STMhqF0OW/FPKOEREqPJRS0oFRPYe3ypoDtnSEBH/hjEmxLUxBqZpklOyKJKGdwbh8RqD99P3+z2MHxUvlia89+EHLKXJSydP54j4YelUYq1qqXhW9jgCNU4yA6WmTk4zaago/vt8Pp9y8D8ZhgGUUjAMQ7gHr9cLIKPEN91pIrbje1lI0uwifoLSZk7hOV26hFPC4yhduhVduhWXlP4DZ5EWwrVS8ToAAAAASUVORK5CYII=" alt="搜索" style="width:20px;height:20px;display:block;">';
+        searchFab.style.display = 'none';
+
+        const searchInput = doc.createElement('input');
+        searchInput.id = SEARCH_INPUT_ID;
+        searchInput.type = 'search';
+        searchInput.placeholder = '输入行李号，支持 / 分隔';
+        searchInput.style.display = 'none';
+
+        doc.body.appendChild(searchInput);
+        doc.body.appendChild(searchFab);
+
+        searchFab.onclick = () => {
+            if (!state.searchExpanded) {
+                state.searchExpanded = true;
+                searchFab.classList.add('tmk-search-active');
+                searchInput.style.display = 'block';
+                searchInput.focus();
+                searchInput.select();
+                return;
+            }
+            submitSearch(searchFab, searchInput);
+        };
+
+        searchInput.addEventListener('keydown', (evt) => {
+            if (evt.key === 'Enter') {
+                evt.preventDefault();
+                submitSearch(searchFab, searchInput);
+            }
+            if (evt.key === 'Escape') {
+                evt.preventDefault();
+                collapseSearch(searchFab, searchInput);
+            }
+        });
+    }
+
+    function ensureSearchShortcut(doc) {
+        if (!doc || !doc.body) return;
+        bindSearchShortcut(doc);
     }
 
     // --- 启动流程 ---
@@ -251,6 +461,8 @@
         const timer = setInterval(() => {
             if (document.body) {
                 injectStyle(document);
+                ensureSearchShortcut(document);
+                setSearchShortcutVisible(false);
                 const fab = document.createElement('button'); fab.id = FAB_ID; fab.textContent = '☰';
                 document.body.appendChild(fab);
                 const overlay = document.createElement('div'); overlay.id = OVERLAY_ID;
@@ -268,10 +480,16 @@
                     </div>`;
                 document.body.appendChild(overlay);
 
+                // 页面局部刷新或脚本重绘时，自动补建搜索按钮，避免依赖菜单按钮交互后才出现
+                setInterval(() => {
+                    ensureSearchShortcut(document);
+                }, 1500);
+
                 fab.onclick = () => {
                     if (!state.overlayOpen) {
                         overlay.style.display = 'block'; renderTiles(document, overlay, fab);
                         state.overlayOpen = true; showRootPage(overlay, fab);
+                        setSearchShortcutVisible(true);
                     } else if (state.showingSub) {
                         showRootPage(overlay, fab);
                     } else {
