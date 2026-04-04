@@ -22,6 +22,7 @@
     const FAB_ID = 'tmk-fab';
     const SEARCH_FAB_ID = 'tmk-search-fab';
     const SEARCH_INPUT_ID = 'tmk-search-input';
+    const PENDING_SEARCH_KEY = 'tmk-pending-search';
     const OVERLAY_ID = 'tmk-overlay';
     const ROOT_GRID_ID = 'tmk-root-grid';
     const SUB_GRID_ID = 'tmk-sub-grid';
@@ -295,9 +296,29 @@
 
     function collapseSearch(searchFab, searchInput) {
         state.searchExpanded = false;
-        searchFab.classList.remove('tmk-search-active');
-        searchInput.style.display = 'none';
-        searchInput.value = '';
+        if (searchFab) searchFab.classList.remove('tmk-search-active');
+        if (searchInput) {
+            searchInput.disabled = false;
+            searchInput.style.background = '#ffffff';
+            searchInput.style.color = '#1d2a38';
+            searchInput.style.display = 'none';
+            searchInput.value = '';
+        }
+    }
+
+    function setSearchLoading(searchFab, searchInput, loading) {
+        if (!searchInput) return;
+        if (searchFab && loading) searchFab.classList.add('tmk-search-active');
+        if (loading) {
+            searchInput.disabled = true;
+            searchInput.style.background = '#e3e7ed';
+            searchInput.style.color = '#5f6b7a';
+            searchInput.value = '页面加载中……';
+            return;
+        }
+        searchInput.disabled = false;
+        searchInput.style.background = '#ffffff';
+        searchInput.style.color = '#1d2a38';
     }
 
     function setSearchShortcutVisible(visible) {
@@ -360,6 +381,75 @@
         return activateTabByText(doc, targetText);
     }
 
+    function savePendingSearch(value) {
+        try {
+            const payload = { value: String(value || ''), ts: Date.now() };
+            window.sessionStorage.setItem(PENDING_SEARCH_KEY, JSON.stringify(payload));
+        } catch (e) {}
+    }
+
+    function readPendingSearch() {
+        try {
+            const raw = window.sessionStorage.getItem(PENDING_SEARCH_KEY);
+            if (!raw) return null;
+            const data = JSON.parse(raw);
+            if (!data || typeof data.value !== 'string') return null;
+            if (!data.ts || Date.now() - data.ts > 5 * 60 * 1000) return null;
+            return data;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function clearPendingSearch() {
+        try {
+            window.sessionStorage.removeItem(PENDING_SEARCH_KEY);
+        } catch (e) {}
+    }
+
+    function waitUntil(predicate, timeoutMs, intervalMs) {
+        const timeout = Number.isFinite(timeoutMs) ? timeoutMs : 4000;
+        const interval = Number.isFinite(intervalMs) ? intervalMs : 120;
+        return new Promise((resolve) => {
+            const startedAt = Date.now();
+            const timer = setInterval(() => {
+                let ok = false;
+                try {
+                    ok = !!predicate();
+                } catch (e) {
+                    ok = false;
+                }
+                if (ok) {
+                    clearInterval(timer);
+                    resolve(true);
+                    return;
+                }
+                if (Date.now() - startedAt >= timeout) {
+                    clearInterval(timer);
+                    resolve(false);
+                }
+            }, interval);
+        });
+    }
+
+    async function ensureTrackingTabReady(rounds) {
+        for (let i = 0; i < rounds; i += 1) {
+            if (isTabActiveByText(document, '行李追踪数据')) return true;
+            const clicked = activateTrackingTab(document);
+            if (!clicked) {
+                await waitUntil(() => !!findVisibleExactTextNode(document, '行李追踪数据'), 2000, 120);
+                continue;
+            }
+            const activated = await waitUntil(
+                () => isTabActiveByText(document, '行李追踪数据') || !!findBrsTargets(document),
+                2200,
+                120
+            );
+            if (activated) return true;
+        }
+        return isTabActiveByText(document, '行李追踪数据') || !!findBrsTargets(document);
+    }
+
     function submitSearchWithRetry(value, searchFab, searchInput, retries) {
         const targets = findBrsTargets(document);
         if (targets) {
@@ -368,7 +458,7 @@
             targets.input.dispatchEvent(new Event('input', { bubbles: true }));
             targets.input.dispatchEvent(new Event('change', { bubbles: true }));
             targets.button.click();
-            collapseSearch(searchFab, searchInput);
+            if (searchFab && searchInput) collapseSearch(searchFab, searchInput);
             // 查询触发后自动收起开始页，减少手动关闭操作
             const overlay = document.getElementById(OVERLAY_ID);
             const fab = document.getElementById(FAB_ID);
@@ -377,34 +467,59 @@
         }
         if (retries <= 0) {
             alert('未找到“查询BRS记录”输入框或按钮。');
-            collapseSearch(searchFab, searchInput);
+            if (searchFab && searchInput) collapseSearch(searchFab, searchInput);
             return;
         }
         setTimeout(() => submitSearchWithRetry(value, searchFab, searchInput, retries - 1), 260);
     }
 
-    function submitSearch(searchFab, searchInput) {
+    async function continuePendingSearchIfNeeded() {
+        const pending = readPendingSearch();
+        if (!pending) return;
+        const value = (pending.value || '').trim();
+        if (!value) {
+            clearPendingSearch();
+            return;
+        }
+        await waitUntil(
+            () => !!findVisibleExactTextNode(document, '行李追踪数据') || !!findBrsTargets(document),
+            8000,
+            150
+        );
+        const trackingReady = await ensureTrackingTabReady(10);
+        if (!trackingReady) return;
+        clearPendingSearch();
+        submitSearchWithRetry(value, null, null, 2);
+    }
+
+    async function submitSearch(searchFab, searchInput) {
         const value = (searchInput.value || '').trim();
         if (!value) {
             collapseSearch(searchFab, searchInput);
             return;
         }
-        // 仅处理“行李追踪数据”标签：不切换页面。
-        // 这里不把“激活态判断”作为硬门槛，避免页面样式差异导致误报。
+        setSearchLoading(searchFab, searchInput, true);
+        const submitDirect = () => submitSearchWithRetry(value, searchFab, searchInput, 2);
+        // 第一步：优先在当前页面激活“行李追踪数据”标签
         if (isTabActiveByText(document, '行李追踪数据')) {
-            submitSearchWithRetry(value, searchFab, searchInput, 2);
+            submitDirect();
+            return;
+        }
+        const directTrackingOk = await ensureTrackingTabReady(3);
+        if (directTrackingOk) {
+            submitDirect();
             return;
         }
 
-        const clicked = activateTrackingTab(document);
-        if (!clicked) {
-            alert('未找到“行李追踪数据”标签页。');
+        // 第二步：当前页失败则切到“新建少收”，等待页面稳定后再激活目标标签
+        const pageSwitched = activatePageTab(document, '新建少收');
+        if (!pageSwitched) {
+            alert('未找到“新建少收”页面或“行李追踪数据”标签页。');
             collapseSearch(searchFab, searchInput);
             return;
         }
-
-        // 点击标签后直接进入提交重试链路，是否真的切到目标区由元素匹配决定
-        setTimeout(() => submitSearchWithRetry(value, searchFab, searchInput, 2), 700);
+        // 页面切换通常触发导航，当前执行链会中断：先缓存查询值，等待新页面加载后自动续跑
+        savePendingSearch(value);
     }
 
     function bindSearchShortcut(doc) {
@@ -414,7 +529,7 @@
         searchFab.id = SEARCH_FAB_ID;
         searchFab.type = 'button';
         searchFab.title = '查询BRS记录';
-        searchFab.innerHTML = '<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAC0AAAAvCAYAAAB30kORAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAHOSURBVGhD7ZbBrcMgDEDd/6+5swVbIHWIbBGp554jZQu2YAsG6N1T5F9q5Fg0BcInisSTeghBzQOM7du6ritcjB85cAW6dCu6dCu6dCu6dCu6dCu6dCsuKX072poiIjjnABEBEUEpBUop0FqD1lpOr0KxNCLCsizgvZevAkopmKapunyRtHMOlmWRwx8ZxxHGcZTDxWRLW2vBWhuelVJgjAkh4b3fhAxRUzxL2nsPj8cjPGutYZ7nzRyCxPkC53muEipZ2YML7AnD+wTk7uaE1B7J0oi4uXR7whwKHYj8RynJ0vxjxpjNuz0o5onTpHPjks9vKs0zQa40hUctkqX5h/kCUuC7W2MBRdJHjjj3lGIkS/PL5JzbvPsGn998p2mXqO9IwVobTqZWE5UsDe9STMhqF0OW/FPKOEREqPJRS0oFRPYe3ypoDtnSEBH/hjEmxLUxBqZpklOyKJKGdwbh8RqD99P3+z2MHxUvlia89+EHLKXJSydP54j4YelUYq1qqXhW9jgCNU4yA6WmTk4zaago/vt8Pp9y8D8ZhgGUUjAMQ7gHr9cLIKPEN91pIrbje1lI0uwifoLSZk7hOV26hFPC4yhduhVduhWXlP4DZ5EWwrVS8ToAAAAASUVORK5CYII=" alt="搜索" style="width:20px;height:20px;display:block;">';
+        searchFab.innerHTML = '<img src="data:image/png;base64,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" alt="搜索" style="width:20px;height:20px;display:block;">';
         searchFab.style.display = 'none';
 
         const searchInput = doc.createElement('input');
@@ -484,6 +599,7 @@
                 setInterval(() => {
                     ensureSearchShortcut(document);
                 }, 1500);
+                continuePendingSearchIfNeeded();
 
                 fab.onclick = () => {
                     if (!state.overlayOpen) {
