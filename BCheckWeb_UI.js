@@ -23,11 +23,31 @@
     const SEARCH_FAB_ID = 'tmk-search-fab';
     const SEARCH_INPUT_ID = 'tmk-search-input';
     const PENDING_SEARCH_KEY = 'tmk-pending-search';
+    const LOST_CARD_INTENT_KEY = 'tmk-lost-card-intent';
     const OVERLAY_ID = 'tmk-overlay';
     const ROOT_GRID_ID = 'tmk-root-grid';
     const SUB_GRID_ID = 'tmk-sub-grid';
 
     const state = { overlayOpen: false, showingSub: false, currentGroup: null, searchExpanded: false };
+
+    function markLostCardIntent(linkText, href) {
+        const text = String(linkText || '');
+        const url = String(href || '');
+        if (!/新建.*少收|少收.*查询/.test(text) && !/new.*baggage.*lost/i.test(url)) return;
+        try {
+            window.sessionStorage.setItem(LOST_CARD_INTENT_KEY, JSON.stringify({
+                from: 'BCheckWeb_UI',
+                text,
+                href: url,
+                ts: Date.now()
+            }));
+        } catch (e) {}
+        try {
+            window.dispatchEvent(new CustomEvent('tmk:lost-card-intent', {
+                detail: { text, href: url, ts: Date.now() }
+            }));
+        } catch (e) {}
+    }
 
     // --- 1. 链接提取：使用 a.href DOM属性（浏览器已按 frame 自身 baseURI 解析好的绝对URL）---
     function extractHref(anchor) {
@@ -236,6 +256,7 @@
         if (lostG) {
             lostG.links.slice(0, 3).forEach(l => {
                 pinnedGrid.appendChild(buildTile(doc, l.text, classForTile(l.text, lostG.title), () => {
+                    markLostCardIntent(l.text, l.href);
                     navigateToContent(l.href); closeOverlay(overlay, fab);
                 }));
             });
@@ -252,6 +273,7 @@
                 subGrid.innerHTML = '';
                 g.links.forEach(l => {
                     subGrid.appendChild(buildTile(doc, l.text, classForTile(l.text, g.title), () => {
+                        markLostCardIntent(l.text, l.href);
                         navigateToContent(l.href); closeOverlay(overlay, fab);
                     }));
                 });

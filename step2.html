@@ -1,0 +1,175 @@
+
+<!-- saved from url=(0050)http://202.96.17.98/BCheckWeb/execute_logon.action -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta http-equiv="pragma" content="no-store">
+<title>行李服务信息系统</title><!-- 行李查询系统 -->
+<link rel="stylesheet" type="text/css" href="./step2_files/main.css">
+<script>
+	function redirectToLogonWhenNull(frameObj){
+		var url = frameObj.contentWindow.location.href;
+		if(url.indexOf("/logon.jsp") >0){
+			if(url.indexOf("/baggage") > 0){
+				url = url.replace("/baggage","");
+			}
+			if(url.indexOf("BCheckWeb") < 0){
+				url = url.replace("/logon.jsp","/BCheckWeb/logon.jsp");
+			}
+			top.location = url;
+		}
+	}
+</script>
+<style id="mnm7tqv0.3ju">
+        #print-action-box {
+            position: fixed !important; right: 15px !important; bottom: 80px !important;
+            z-index: 2147483647 !important; display: none; background: transparent !important;
+            border: none !important; padding: 0 !important;
+        }
+        .print-btn-style {
+            display: flex !important; align-items: center !important; justify-content: center !important;
+            width: 110px !important; min-height: 45px !important; background-color: #28a745 !important;
+            color: #ffffff !important; border: 2px solid #ffffff !important; border-radius: 8px !important;
+            font-size: 14px !important; font-weight: bold !important; cursor: pointer !important;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important; text-align: center !important;
+        }
+    </style><style id="mnmb7xgc.ur">
+        #float-action-box {
+            position: fixed !important;
+            right: 10px !important;
+            top: 40px !important;
+            z-index: 2147483647 !important;
+            display: none;
+            flex-direction: column !important;
+            gap: 8px !important;
+            width: 140px !important;
+            max-height: calc(100vh - 48px) !important;
+            overflow-y: auto !important;
+            background: rgba(255, 255, 255, 0.4) !important;
+            padding: 8px !important;
+            border: 1px solid #007bff !important;
+            border-radius: 8px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important;
+            box-sizing: border-box !important;
+        }
+        #quick-fill-panel {
+            display: none;
+            flex-direction: column !important;
+            gap: 6px !important;
+            padding: 6px !important;
+            border: 1px solid #d6e6ff !important;
+            border-radius: 8px !important;
+            background: rgba(238, 246, 255, 0.4) !important;
+        }
+        #quick-fill-panel .qf-title {
+            font-size: 12px !important;
+            font-weight: 700 !important;
+            color: #0f3f7f !important;
+            margin: 0 !important;
+        }
+        #quick-fill-panel .qf-label {
+            font-size: 12px !important;
+            color: #14365f !important;
+            margin-top: 2px !important;
+        }
+        #quick-fill-panel input {
+            width: 100% !important;
+            min-height: 28px !important;
+            padding: 4px 6px !important;
+            border: 1px solid #9cc0ef !important;
+            border-radius: 6px !important;
+            background: #ffffff !important;
+            color: #111 !important;
+            box-sizing: border-box !important;
+            font-size: 12px !important;
+        }
+        #quick-fill-hint {
+            font-size: 11px !important;
+            color: #4a5d78 !important;
+            line-height: 1.35 !important;
+        }
+        .qf-action-row {
+            display: flex !important;
+            gap: 6px !important;
+            margin-top: 4px !important;
+        }
+        #qf-preview-btn {
+            width: 100% !important;
+            min-height: 30px !important;
+            border: 2px solid rgba(255, 255, 255, 0.4) !important;
+            border-radius: 6px !important;
+            background-color: rgba(0, 123, 255, 0.4) !important;
+            color: #ffffff !important;
+            font-size: 14px !important;
+            font-weight: bold !important;
+            cursor: pointer !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
+            padding: 5px !important;
+            box-sizing: border-box !important;
+        }
+        #clone-btn-host {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 8px !important;
+        }
+        .my-clone-btn {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            width: 100% !important;
+            min-height: 40px !important;
+            background-color: rgba(0, 123, 255, 0.4) !important;
+            color: #ffffff !important;
+            border: 2px solid rgba(255, 255, 255, 0.4) !important;
+            border-radius: 8px !important;
+            font-size: 14px !important;
+            font-weight: bold !important;
+            cursor: pointer !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
+            margin: 0 !important;
+            padding: 5px !important;
+            list-style: none !important;
+            text-align: center !important;
+            box-sizing: border-box !important;
+        }
+        .my-clone-btn:hover {
+            background-color: #0056b3 !important;
+            border-color: #ffffff !important;
+        }
+        #qf-preview-btn:hover {
+            border-color: #ffffff !important;
+            background-color: #0056b3 !important;
+        }
+        .my-clone-btn.finish-clone {
+            background-color: rgba(40, 167, 69, 0.4) !important;
+        }
+        .my-clone-btn.finish-clone:hover {
+            background-color: #28a745 !important;
+            border-color: #ffffff !important;
+        }
+    </style></head>
+
+<frameset rows="0,*,0" cols="*" frameborder="no" border="0" framespacing="0" id="main_frameset">
+  <frame frameborder="0" id="header_frame" name="header_frame" src="./step2_files/header.html" scrolling="no" noresize="noresize">
+  <frameset cols="0,8,*" frameborder="no" border="0" framespacing="0" id="content_frameset">
+    <frame frameborder="0" id="menu_frame" name="menu_frame" src="./step2_files/menu.html">
+    <frame frameborder="0" id="control_frame" name="control_frame" src="./step2_files/control.html" scrolling="no" noresize="noresize">    
+    <frame frameborder="0" id="content_frame" name="content_frame" src="./step2_files/welcome.html" onload="redirectToLogonWhenNull(this);">
+  </frameset>
+  <frame frameborder="0" id="footer_frame" name="footer_frame" src="./step2_files/footer.html" scrolling="no" noresize="noresize">
+<div id="print-action-box" style="display: none;"><div class="print-btn-style">打印封面</div></div><div id="float-action-box" style="display: flex;"><div id="quick-fill-panel" style="display: none;">
+        <p class="qf-title">完成前快捷填充</p>
+        <label class="qf-label" for="qf-ct">CT（用 / 分隔）</label>
+        <input id="qf-ct" type="text" placeholder="BK22RHW/RD01XXX">
+        <label class="qf-label" for="qf-pa">PA 永久地址</label>
+        <input id="qf-pa" type="text" placeholder="例如: 123 MAIN ST">
+        <label class="qf-label" for="qf-family">家庭电话</label>
+        <input id="qf-family" type="text" placeholder="数字">
+        <label class="qf-label" for="qf-cp">CP 移动电话</label>
+        <input id="qf-cp" type="text" value="3102151188">
+        <div class="qf-action-row">
+            <button id="qf-preview-btn" type="button">内容预览</button>
+        </div>
+        <div id="quick-fill-hint">点击“内容预览”可先把上方内容填入网页；点击“完成”时会再次执行填充后再提交。</div>
+    </div><div id="clone-btn-host"><div class="my-clone-btn">查询</div><div class="my-clone-btn">新建</div><div class="my-clone-btn">返回</div></div></div></frameset>
+<noframes><body>
+</body>
+</noframes></html>
