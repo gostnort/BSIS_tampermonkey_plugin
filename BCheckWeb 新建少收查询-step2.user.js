@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         BCheckWeb 新建少收查询 Step2 离港结果壳层
 // @namespace    http://tampermonkey.net/
-// @version      1.4.3
-// @description  第二步：座位与舱位分行、摘要标签与行李行左对齐
+// @version      1.4.5
+// @description  第二步：无详情单选时自动选最后已勾选航段（含仅一段）
 // @author       Gostnort
 // @match        http://60.247.100.98/BCheckWeb/*
 // @match        https://60.247.100.98/BCheckWeb/*
@@ -122,6 +122,17 @@
 
     function textNorm(s) {
         return String(s || '').replace(/\s+/g, '').trim();
+    }
+
+
+    function triggerJqChange(inputEl) {
+        if (!inputEl) return;
+        try {
+            const $ = window.jQuery || window.$;
+            if ($ && $.fn && $.fn.trigger) {
+                $(inputEl).trigger('change');
+            }
+        } catch (e) {}
     }
 
 
@@ -321,24 +332,50 @@
         if (state.laxAutoDoneByBlock.get(block)) return;
         const blockCb = block.querySelector('input[name="eXLgSelect"]');
         const rows = getBaggageRows(block, bi);
-        let changed = false;
         if (blockCb && !blockCb.checked) {
-            blockCb.checked = true;
-            changed = true;
+            blockCb.click();
+            triggerJqChange(blockCb);
         }
         for (let r = 0; r < rows.length; r++) {
             if (!rows[r].checkbox.checked) {
-                rows[r].checkbox.checked = true;
-                changed = true;
-            }
-        }
-        if (changed) {
-            if (blockCb) blockCb.dispatchEvent(new Event('change', { bubbles: true }));
-            for (let r = 0; r < rows.length; r++) {
-                rows[r].checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+                rows[r].checkbox.click();
+                triggerJqChange(rows[r].checkbox);
             }
         }
         state.laxAutoDoneByBlock.set(block, true);
+    }
+
+
+    function applyAutoLgSelectForSubmission() {
+        const blocks = getLgBlocks();
+        const checkedBlocks = [];
+        for (let i = 0; i < blocks.length; i++) {
+            const block = blocks[i];
+            const bi = getBlockIndex(block);
+            if (isFlightDelY(block, bi)) continue;
+            const ex = block.querySelector('input[name="eXLgSelect"]');
+            if (ex && ex.checked) checkedBlocks.push(block);
+        }
+        if (!checkedBlocks.length) return;
+        const allRads = document.querySelectorAll('input[name="lgSelect"]');
+        let detailOk = false;
+        for (let r = 0; r < allRads.length; r++) {
+            if (!allRads[r].checked) continue;
+            const host = allRads[r].closest('div[id="lgDisplay"]');
+            if (!host) continue;
+            const ex = host.querySelector('input[name="eXLgSelect"]');
+            if (ex && ex.checked) {
+                detailOk = true;
+                break;
+            }
+        }
+        if (detailOk) return;
+        const targetBlock = checkedBlocks[checkedBlocks.length - 1];
+        const rad = targetBlock.querySelector('input[name="lgSelect"]');
+        if (!rad) return;
+        for (let j = 0; j < allRads.length; j++) allRads[j].checked = false;
+        rad.click();
+        triggerJqChange(rad);
     }
 
 
@@ -836,6 +873,7 @@
         for (let p = 0; p < blocksPre.length; p++) {
             ensureLaxRowAutoSelect(blocksPre[p], getBlockIndex(blocksPre[p]));
         }
+        applyAutoLgSelectForSubmission();
         rowsRoot.innerHTML = '';
         const blocks = getLgBlocks();
         for (let i = 0; i < blocks.length; i++) {
@@ -880,8 +918,8 @@
                     if (timer) clearTimeout(timer);
                     timer = setTimeout(function() {
                         timer = null;
-                        blockCb.checked = !blockCb.checked;
-                        blockCb.dispatchEvent(new Event('change', { bubbles: true }));
+                        blockCb.click();
+                        triggerJqChange(blockCb);
                         if (state.shell) scheduleSync(state.shell);
                     }, 280);
                 });
@@ -892,12 +930,14 @@
                         timer = null;
                     }
                     if (delY || !blockCb || !rad) return;
-                    if (!blockCb.checked) blockCb.checked = true;
                     const all = document.querySelectorAll('input[name="lgSelect"]');
                     for (let j = 0; j < all.length; j++) all[j].checked = false;
-                    rad.checked = true;
-                    rad.dispatchEvent(new Event('change', { bubbles: true }));
-                    rad.dispatchEvent(new Event('click', { bubbles: true }));
+                    if (!blockCb.checked) {
+                        blockCb.click();
+                        triggerJqChange(blockCb);
+                    }
+                    rad.click();
+                    triggerJqChange(rad);
                     if (state.shell) scheduleSync(state.shell);
                 });
             })();
@@ -929,9 +969,8 @@
                 st.addEventListener('click', function(e) {
                     e.preventDefault();
                     if (delY) return;
-                    item.checkbox.checked = !item.checkbox.checked;
-                    item.checkbox.dispatchEvent(new Event('change', { bubbles: true }));
-                    item.checkbox.dispatchEvent(new Event('click', { bubbles: true }));
+                    item.checkbox.click();
+                    triggerJqChange(item.checkbox);
                     if (state.shell) scheduleSync(state.shell);
                 });
                 swrap.appendChild(st);

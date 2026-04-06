@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         BCheckWeb 按钮悬浮
+// @name         BCheckWeb 快捷表单按钮
 // @namespace    http://tampermonkey.net/
-// @version      2.8
-// @description  保留原始按钮，抓取成功才显示悬浮框，集成所有特调 ID
+// @version      2.9
+// @description  原仓库文件名：BCheckWeb 按钮悬浮-2.8.user.js。保留原始按钮，抓取成功才显示悬浮框，集成所有特调 ID
 // @author       Gostnort & Gemini
 // @match        http://60.247.100.98/BCheckWeb/*
 // @match        http://202.96.17.98/BCheckWeb/*
@@ -166,6 +166,7 @@
         previewBtn: quickPanel.querySelector('#qf-preview-btn')
     };
     let capsLockActive = false;
+
 
     function getWorkingDoc() {
         if (inContentFrame) return document;
