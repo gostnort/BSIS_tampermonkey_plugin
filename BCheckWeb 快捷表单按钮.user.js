@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         BCheckWeb 快捷表单按钮
 // @namespace    http://tampermonkey.net/
-// @version      2.9
-// @description  原仓库文件名：BCheckWeb 按钮悬浮-2.8.user.js。保留原始按钮，抓取成功才显示悬浮框，集成所有特调 ID
+// @version      2.9.2
+// @description  原仓库文件名：BCheckWeb 按钮悬浮-2.8.user.js。新建少收查询第一步不克隆 l_search；离港结果 Step2 页不注入本悬浮框（与统合脚本壳层解耦）。其余页保留克隆与完成前快捷填充
 // @author       Gostnort & Gemini
 // @match        http://60.247.100.98/BCheckWeb/*
 // @match        http://202.96.17.98/BCheckWeb/*
@@ -17,6 +17,8 @@
     if (!inTopWindow && !inContentFrame) return;
     const DEFAULT_CP = '3102151188';
     const CT_PATTERN = /^[A-Z]{2}[0-9]{2}[A-Z]{3}$/;
+    const NEW_BAGGAGE_LOST_MENU_PATH = /newBaggageLostSearch_menuAction\.action/i;
+    const BAGGAGE_LOST_STEP2_PATH = /baggageLostSearch_newBaggageLostAction\.action/i;
 
     GM_addStyle(`
         #float-action-box {
@@ -175,6 +177,26 @@
             if (frame && frame.contentWindow && frame.contentWindow.document) return frame.contentWindow.document;
         } catch (error) {}
         return document;
+    }
+
+
+    // 新建少收查询第一步：现代表单已提供「查询」，此处不再克隆 #l_search，避免右上角重复按钮
+    function isNewBaggageLostMenuDoc(cd) {
+        try {
+            return NEW_BAGGAGE_LOST_MENU_PATH.test(String(cd.location && cd.location.href || ''));
+        } catch (e) {
+            return false;
+        }
+    }
+
+
+    // 离港结果 Step2：统合脚本已提供工具栏与壳层内「新建」等，本脚本整框隐藏避免与右上角重复
+    function isBaggageLostStep2Doc(cd) {
+        try {
+            return BAGGAGE_LOST_STEP2_PATH.test(String(cd.location && cd.location.href || ''));
+        } catch (e) {
+            return false;
+        }
     }
 
 
@@ -416,7 +438,16 @@
 
     function snatch() {
         const cd = getWorkingDoc();
-        const targetIds = ['l_search', 'newBaggageLostBtn', 'back', 'finish', 'clear', 'next', 'pre'];
+        if (isBaggageLostStep2Doc(cd)) {
+            cloneHost.innerHTML = '';
+            quickPanel.style.display = 'none';
+            container.style.display = 'none';
+            return;
+        }
+        let targetIds = ['l_search', 'newBaggageLostBtn', 'back', 'finish', 'clear', 'next', 'pre'];
+        if (isNewBaggageLostMenuDoc(cd)) {
+            targetIds = targetIds.filter((id) => id !== 'l_search');
+        }
         const fromIds = targetIds.map((id) => cd.getElementById(id)).filter((el) => el && isVisible(el));
         const bottomBtns = Array.from(cd.querySelectorAll('.l_bottom .l_btn, .l_bottom button')).filter(isVisible);
         const controlBtns = Array.from(cd.querySelectorAll('.ui-controlgroup-controls label.ui-btn')).filter((lbl) => {

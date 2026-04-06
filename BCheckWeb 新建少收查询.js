@@ -643,8 +643,8 @@
         const toolbar = document.createElement('div');
         toolbar.id = TOOLBAR_ID;
         toolbar.innerHTML = `
-            <button class="tmk-lqv2-btn tmk-active" data-mode="modern" type="button">现代视图</button>
-            <button class="tmk-lqv2-btn" data-mode="legacy" type="button">旧版页面</button>
+            <button class="tmk-lqv2-btn tmk-active" data-mode="modern" type="button">我的视图</button>
+            <button class="tmk-lqv2-btn" data-mode="legacy" type="button">原版页面</button>
         `;
         document.body.appendChild(toolbar);
         toolbar.addEventListener('click', (event) => {
