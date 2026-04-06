@@ -87,9 +87,15 @@
         const vh = window.innerHeight;
         const shortSide = Math.min(vw, vh);
         const small = Math.max(46, Math.min(78, Math.round(shortSide * 0.07)));
+        const gap = Math.max(8, Math.min(16, Math.round(small * 0.22)));
+        const medium = small * 2;
+        // 大 tile 宽度：两个 medium 并排 + 间距，供 Step2 等壳层与 --tmk-big-tile 共用
+        const bigTile = medium * 2 + gap;
         return {
-            small, gap: Math.max(8, Math.min(16, Math.round(small * 0.22))),
-            medium: small * 2,
+            small: small,
+            gap: gap,
+            medium: medium,
+            bigTile: bigTile,
             h1Size: Math.max(30, Math.min(48, Math.floor(vw * 0.035)))
         };
     }
@@ -97,10 +103,13 @@
 
     function publishUiMetrics(metrics) {
         if (!metrics) return;
+        const med = Number(metrics.medium) || 92;
+        const g = Number(metrics.gap) || 8;
         const payload = {
             small: Number(metrics.small) || 46,
-            gap: Number(metrics.gap) || 8,
-            medium: Number(metrics.medium) || 92,
+            gap: g,
+            medium: med,
+            bigTile: Number.isFinite(metrics.bigTile) ? Number(metrics.bigTile) : med * 2 + g,
             h1Size: Number(metrics.h1Size) || 30,
             ts: Date.now()
         };
@@ -125,6 +134,7 @@
                 --tmk-blue: 0, 90, 158; --tmk-teal: 0, 120, 120;
                 --tmk-purple: 81, 43, 129; --tmk-slate: 45, 125, 154;
                 --tmk-medium: ${m.medium}px; --tmk-gap: ${m.gap}px;
+                --tmk-big-tile: ${m.bigTile}px;
             }
             #${OVERLAY_ID} {
                 position: fixed!important; inset: 0!important; z-index: 2147483646!important;
