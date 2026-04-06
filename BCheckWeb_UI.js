@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         BCheckWeb UI 瓷砖菜单 - 0.7.1
+// @name         BCheckWeb UI 瓷砖菜单 - 0.7.2
 // @namespace    http://tampermonkey.net/
-// @version      0.7.1
+// @version      0.7.2
 // @description  修复按钮位置 | 标题动态联动 | 黄金比例间距 | 链接逻辑修复
 // @author       Gostnort
 // @match        http://60.247.100.98/BCheckWeb/*
@@ -23,6 +23,7 @@
     const SEARCH_FAB_ID = 'tmk-search-fab';
     const SEARCH_INPUT_ID = 'tmk-search-input';
     const PENDING_SEARCH_KEY = 'tmk-pending-search';
+    const MODERN_LOST_QUERY_KEY = 'tmk-modern-lost-query-v2-launch';
     const OVERLAY_ID = 'tmk-overlay';
     const ROOT_GRID_ID = 'tmk-root-grid';
     const SUB_GRID_ID = 'tmk-sub-grid';
@@ -57,22 +58,26 @@
         if (url) window.location.href = url;
     }
 
-    // --- 2. 框架折叠 (锁定 0,8,*) ---
-    function hideLegacyChrome() {
-        if (!inTopWindow) return;
+
+    function markModernLostQueryLaunch(linkText) {
+        const text = String(linkText || '').replace(/\s+/g, '');
+        if (!/新建少收查询/.test(text)) return;
         try {
-            const topDoc = document;
-            const apply = () => {
-                const mainFs = topDoc.getElementById('main_frameset');
-                const contentFs = topDoc.getElementById('content_frameset');
-                if (mainFs) mainFs.rows = "0,*,0";
-                if (contentFs && contentFs.cols !== "0,8,*") {
-                    contentFs.cols = "0,8,*";
-                    contentFs.setAttribute('cols', "0,8,*");
-                }
-            };
-            apply();
-            if (!window.tmkGuard) window.tmkGuard = setInterval(apply, 1000);
+            window.sessionStorage.setItem(MODERN_LOST_QUERY_KEY, String(Date.now()));
+        } catch (e) {}
+    }
+
+    // --- 2. 启动时默认折叠布局（保留 control_frame 可手动展开 menu_frame） ---
+    function applyDefaultFrameLayout() {
+        try {
+            const topDoc = window.top && window.top.document ? window.top.document : document;
+            const mainFs = topDoc.getElementById('main_frameset');
+            const contentFs = topDoc.getElementById('content_frameset');
+            if (mainFs) mainFs.rows = '0,*,0';
+            if (contentFs) {
+                contentFs.cols = '0,8,*';
+                contentFs.setAttribute('cols', '0,8,*');
+            }
         } catch (e) {}
     }
 
@@ -89,9 +94,26 @@
         };
     }
 
+
+    function publishUiMetrics(metrics) {
+        if (!metrics) return;
+        const payload = {
+            small: Number(metrics.small) || 46,
+            gap: Number(metrics.gap) || 8,
+            medium: Number(metrics.medium) || 92,
+            h1Size: Number(metrics.h1Size) || 30,
+            ts: Date.now()
+        };
+        try {
+            if (window.top) window.top.__tmkUiMetrics = payload;
+        } catch (e) {}
+        window.__tmkUiMetrics = payload;
+    }
+
     function injectStyle(doc) {
         if (!doc || !doc.head) return;
         const m = calcUiMetrics();
+        publishUiMetrics(m);
         let style = doc.getElementById('tmk-ui-style');
         if (!style) {
             style = doc.createElement('style');
@@ -236,6 +258,7 @@
         if (lostG) {
             lostG.links.slice(0, 3).forEach(l => {
                 pinnedGrid.appendChild(buildTile(doc, l.text, classForTile(l.text, lostG.title), () => {
+                    markModernLostQueryLaunch(l.text);
                     navigateToContent(l.href); closeOverlay(overlay, fab);
                 }));
             });
@@ -252,6 +275,7 @@
                 subGrid.innerHTML = '';
                 g.links.forEach(l => {
                     subGrid.appendChild(buildTile(doc, l.text, classForTile(l.text, g.title), () => {
+                        markModernLostQueryLaunch(l.text);
                         navigateToContent(l.href); closeOverlay(overlay, fab);
                     }));
                 });
@@ -571,8 +595,11 @@
     }
 
     // --- 启动流程 ---
-    hideLegacyChrome();
     if (inContentFrame) {
+        // 只在启动阶段做几次默认布局，之后交还给 control_frame 按钮控制
+        applyDefaultFrameLayout();
+        setTimeout(applyDefaultFrameLayout, 300);
+        setTimeout(applyDefaultFrameLayout, 1200);
         const timer = setInterval(() => {
             if (document.body) {
                 injectStyle(document);
