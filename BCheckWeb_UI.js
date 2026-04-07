@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         BCheckWeb UI 瓷砖菜单 - 0.7.3
+// @name         BCheckWeb UI 瓷砖菜单 - 0.7.5
 // @namespace    http://tampermonkey.net/
-// @version      0.7.3
+// @version      0.7.5
 // @description  修复按钮位置 | 标题动态联动 | 黄金比例间距 | 链接逻辑修复
 // @author       Gostnort
 // @match        http://60.247.100.98/BCheckWeb/*
@@ -30,6 +30,7 @@
     const OVERLAY_ID = 'tmk-overlay';
     const ROOT_GRID_ID = 'tmk-root-grid';
     const SUB_GRID_ID = 'tmk-sub-grid';
+    const SYSTEM_GRID_ID = 'tmk-system-grid';
 
     const state = { overlayOpen: false, showingSub: false, currentGroup: null, searchExpanded: false };
 
@@ -94,11 +95,13 @@
         const medium = small * 2;
         // 大 tile 宽度：两个 medium 并排 + 间距，供 Step2 等壳层与 --tmk-big-tile 共用
         const bigTile = medium * 2 + gap;
+        const smallTileH = (medium - gap) / 2;
         return {
             small: small,
             gap: gap,
             medium: medium,
             bigTile: bigTile,
+            smallTileH: smallTileH,
             h1Size: Math.max(30, Math.min(48, Math.floor(vw * 0.035)))
         };
     }
@@ -113,6 +116,7 @@
             gap: g,
             medium: med,
             bigTile: Number.isFinite(metrics.bigTile) ? Number(metrics.bigTile) : med * 2 + g,
+            smallTileH: Number.isFinite(metrics.smallTileH) ? Number(metrics.smallTileH) : (med - g) / 2,
             h1Size: Number(metrics.h1Size) || 30,
             ts: Date.now()
         };
@@ -160,8 +164,9 @@
             :root {
                 --tmk-blue: 0, 90, 158; --tmk-teal: 0, 120, 120;
                 --tmk-purple: 81, 43, 129; --tmk-slate: 45, 125, 154;
-                --tmk-medium: ${m.medium}px; --tmk-gap: ${m.gap}px;
+                --tmk-small: ${m.small}px; --tmk-medium: ${m.medium}px; --tmk-gap: ${m.gap}px;
                 --tmk-big-tile: ${m.bigTile}px;
+                --tmk-small-tile-h: ${m.smallTileH}px;
             }
             #${OVERLAY_ID} {
                 position: fixed!important; inset: 0!important; z-index: 2147483646!important;
@@ -232,20 +237,45 @@
             .tmk-active-tag { display: none !important; }
             .tmk-grid { display: grid !important; gap: var(--tmk-gap) !important; grid-template-columns: repeat(auto-fill, var(--tmk-medium)) !important; }
 
-            /* 黄金比例间距：常驻区与主网格之间 */
-            #${ROOT_GRID_ID} { margin-top: calc(var(--tmk-medium) * 0.618) !important; }
+            /* 常驻少收：两侧大磁贴 + 中间标准磁贴 */
+            #tmk-pinned-grid.tmk-pinned-grid--wide {
+                grid-template-columns: var(--tmk-big-tile) var(--tmk-medium) var(--tmk-big-tile) !important;
+                align-items: center !important;
+            }
+
+            /* 黄金比例间距：常驻区与主网格、主网格与系统行 */
+            #${ROOT_GRID_ID}, #${SYSTEM_GRID_ID} { margin-top: calc(var(--tmk-medium) * 0.618) !important; }
+
+            #${SYSTEM_GRID_ID} {
+                grid-template-columns: var(--tmk-medium) !important;
+                justify-content: start !important;
+            }
 
             .tmk-tile {
+                box-sizing: border-box !important;
                 width: var(--tmk-medium) !important; height: var(--tmk-medium) !important;
-                border: 0 !important; color: #fff !important; padding: 15px !important; text-align: left !important;
-                cursor: pointer !important; transition: transform 0.15s !important;
+                border: 0 !important; padding: 15px !important; text-align: left !important;
+                cursor: pointer !important; transition: transform 0.15s ease, filter 0.15s ease !important;
             }
-            .tmk-tile:hover { transform: scale(1.03); filter: brightness(1.15); }
+            .tmk-tile--big {
+                width: var(--tmk-big-tile) !important; height: var(--tmk-medium) !important;
+            }
+            .tmk-tile--small {
+                width: var(--tmk-medium) !important; height: var(--tmk-small-tile-h) !important;
+                padding: 6px 12px !important;
+            }
+            .tmk-tile--small .tmk-title { font-size: 12px !important; line-height: 1.15 !important; }
+            .tmk-tile:hover { transform: scale(1.03); }
+            .tmk-lv1:hover, .tmk-lv2:hover { filter: brightness(1.12); }
+            .tmk-lv3:hover, .tmk-lv4:hover, .tmk-lv5:hover { filter: brightness(0.96); }
             .tmk-title { font-size: 18px !important; line-height: 1.2 !important; }
-            .tmk-core { background: rgba(var(--tmk-blue), 0.7) !important; }
-            .tmk-data { background: rgba(var(--tmk-teal), 0.7) !important; }
-            .tmk-system { background: rgba(var(--tmk-purple), 0.7) !important; }
-            .tmk-aux { background: rgba(var(--tmk-slate), 0.7) !important; }
+            .tmk-lv1 { background: #BD0000 !important; color: #FFFFFF !important; }
+            .tmk-lv2 { background: #2C3E50 !important; color: #FFFFFF !important; }
+            .tmk-lv3 { background: #EDF1F5 !important; color: #34495E !important; }
+            .tmk-tile--kv-tool.tmk-lv3 { border: 2px solid #2C3E50 !important; }
+            .tmk-tile--kv-tool.tmk-lv3 .tmk-title { color: #BD0000 !important; }
+            .tmk-lv4 { background: #F8F9FA !important; color: #6C757D !important; }
+            .tmk-lv5 { background: #E9ECEF !important; color: #495057 !important; }
             .tmk-tile div:not(.tmk-title) { display: none !important; }
         `;
     }
@@ -269,20 +299,37 @@
         state.showingSub = true; fab.textContent = '‹';
     }
 
-    // --- 5. 颜色分类 ---
-    function classForGroup(title) {
-        if (/少收|多收|破损|速运行李/.test(title)) return 'tmk-core';
-        if (/信息|核对|文件|报销/.test(title)) return 'tmk-data';
-        if (/统计|查询|维护|系统/.test(title)) return 'tmk-system';
-        return 'tmk-aux';
+    // --- 5. 磁贴等级色（lv1 核心高频 … lv5 系统边缘）---
+    function tileLevelClass(title, groupTitle) {
+        const t = String(title || '').trim();
+        const g = String(groupTitle || '').trim();
+        if (/退出系统/.test(t)) return 'tmk-lv5';
+        if (/系统维护/.test(t)) return 'tmk-lv5';
+        if (/新建少收查询|新建少收|少收查看/.test(t)) return 'tmk-lv1';
+        if (/快速查找|信息处理/.test(t)) return 'tmk-lv3';
+        if (/业务文件管理|统计查询|航站信息|大批行李核对|打印报销单/.test(t)) return 'tmk-lv4';
+        if (/^(多收行李|破损行李|速运行李|速运行行李)$/.test(t)) return 'tmk-lv2';
+        if (/^(多收行李|破损行李|速运行李|速运行行李)$/.test(g)) return 'tmk-lv2';
+        if (/快速查找|信息处理/.test(g)) return 'tmk-lv3';
+        if (/业务文件管理|统计查询|航站信息|大批行李核对|打印报销单/.test(g)) return 'tmk-lv4';
+        if (/系统维护/.test(g)) return 'tmk-lv5';
+        return 'tmk-lv4';
     }
 
 
-    function classForTile(title, groupTitle) {
-        if (/退出系统/.test(title)) return 'tmk-system';
-        if (/快速查找|信息处理/.test(title)) return 'tmk-aux';
-        if (/统计查询/.test(title)) return 'tmk-data';
-        return classForGroup(groupTitle || title);
+    // 常驻区第一行：两侧大磁贴（新建少收查询 / 少收查看）
+    function tileSizePinnedClass(title) {
+        const t = String(title || '').trim();
+        if (/新建少收查询/.test(t) || /少收查看/.test(t)) return 'tmk-tile--big';
+        return '';
+    }
+
+
+    // 第三级辅助工具：快速查找 / 信息处理区 — 红字(#BD0000) + 深碳蓝黑边(#2C3E50)
+    function tileLv3OutlineClass(title) {
+        const t = String(title || '').trim();
+        if (/快速查找|信息处理/.test(t)) return 'tmk-tile--kv-tool';
+        return '';
     }
 
 
@@ -290,6 +337,7 @@
     function renderTiles(doc, overlay, fab) {
         const rootGrid = doc.getElementById(ROOT_GRID_ID);
         const pinnedGrid = doc.getElementById('tmk-pinned-grid');
+        const systemGrid = doc.getElementById(SYSTEM_GRID_ID);
         const mf = window.top.frames.menu_frame;
         if (!mf || !mf.document || !rootGrid) return;
 
@@ -302,42 +350,66 @@
             })).filter(l => l.href)
         })).filter(g => g.links.length > 0);
 
-        rootGrid.innerHTML = ''; pinnedGrid.innerHTML = '';
+        rootGrid.innerHTML = '';
+        pinnedGrid.innerHTML = '';
+        pinnedGrid.classList.remove('tmk-pinned-grid--wide');
+        if (systemGrid) systemGrid.innerHTML = '';
         const lostG = groups.find(g => /少收/.test(g.title));
+        const sysG = groups.find(g => /系统维护/.test(g.title));
 
-        // 常驻区
+        // 常驻区（不含退出；大|中|大 时加宽列模板）
         if (lostG) {
-            lostG.links.slice(0, 3).forEach(l => {
-                pinnedGrid.appendChild(buildTile(doc, l.text, classForTile(l.text, lostG.title), () => {
+            const row = lostG.links.slice(0, 3);
+            if (row.length >= 3) pinnedGrid.classList.add('tmk-pinned-grid--wide');
+            row.forEach(l => {
+                pinnedGrid.appendChild(buildTile(doc, l.text, 'tmk-lv1', () => {
                     markModernLostQueryLaunch(l.text);
                     navigateToContent(l.href); closeOverlay(overlay, fab);
-                }));
+                }, tileSizePinnedClass(l.text), tileLv3OutlineClass(l.text)));
             });
         }
-        pinnedGrid.appendChild(buildTile(doc, '退出系统', 'tmk-system', () => {
-            window.top.location.href = getLogoutUrl();
-        }));
 
-        // 主菜单
+        // 主菜单（不含少收整组、不含系统维护整组）
         groups.forEach(g => {
             if (lostG && g.title === lostG.title) return;
-            rootGrid.appendChild(buildTile(doc, g.title, classForTile(g.title, g.title), () => {
+            if (sysG && g.title === sysG.title) return;
+            rootGrid.appendChild(buildTile(doc, g.title, tileLevelClass(g.title, g.title), () => {
                 const subGrid = doc.getElementById(SUB_GRID_ID);
                 subGrid.innerHTML = '';
                 g.links.forEach(l => {
-                    subGrid.appendChild(buildTile(doc, l.text, classForTile(l.text, g.title), () => {
+                    subGrid.appendChild(buildTile(doc, l.text, tileLevelClass(l.text, g.title), () => {
                         markModernLostQueryLaunch(l.text);
                         navigateToContent(l.href); closeOverlay(overlay, fab);
-                    }));
+                    }, '', tileLv3OutlineClass(l.text)));
                 });
                 showSubPage(overlay, fab, g.title);
-            }));
+            }, '', tileLv3OutlineClass(g.title)));
         });
+
+        // 第三行：退出系统 + 系统维护（小磁贴）
+        if (systemGrid) {
+            systemGrid.appendChild(buildTile(doc, '退出系统', 'tmk-lv5', () => {
+                window.top.location.href = getLogoutUrl();
+            }, 'tmk-tile--small'));
+            if (sysG) {
+                systemGrid.appendChild(buildTile(doc, sysG.title, tileLevelClass(sysG.title, sysG.title), () => {
+                    const subGrid = doc.getElementById(SUB_GRID_ID);
+                    subGrid.innerHTML = '';
+                    sysG.links.forEach(l => {
+                        subGrid.appendChild(buildTile(doc, l.text, tileLevelClass(l.text, sysG.title), () => {
+                            markModernLostQueryLaunch(l.text);
+                            navigateToContent(l.href); closeOverlay(overlay, fab);
+                        }, '', tileLv3OutlineClass(l.text)));
+                    });
+                    showSubPage(overlay, fab, sysG.title);
+                }, 'tmk-tile--small'));
+            }
+        }
     }
 
-    function buildTile(doc, title, cls, onClick) {
+    function buildTile(doc, title, cls, onClick, sizeCls, extraCls) {
         const btn = doc.createElement('button');
-        btn.className = `tmk-tile ${cls}`;
+        btn.className = ['tmk-tile', cls, sizeCls || '', extraCls || ''].filter(Boolean).join(' ');
         btn.innerHTML = `<div class="tmk-title">${title}</div>`;
         btn.onclick = onClick;
         return btn;
@@ -669,6 +741,7 @@
                             </div>
                             <div class="tmk-grid" id="tmk-pinned-grid"></div>
                             <div class="tmk-grid" id="${ROOT_GRID_ID}"></div>
+                            <div class="tmk-grid" id="${SYSTEM_GRID_ID}"></div>
                         </section>
                         <section class="tmk-page" id="tmk-sub-page" style="display:none;">
                             <h1 class="tmk-h1">业务</h1>
