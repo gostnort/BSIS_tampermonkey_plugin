@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         BCheckWeb UI 瓷砖菜单 - 0.7.2
+// @name         BCheckWeb UI 瓷砖菜单 - 0.7.3
 // @namespace    http://tampermonkey.net/
-// @version      0.7.2
+// @version      0.7.3
 // @description  修复按钮位置 | 标题动态联动 | 黄金比例间距 | 链接逻辑修复
 // @author       Gostnort
 // @match        http://60.247.100.98/BCheckWeb/*
@@ -24,6 +24,9 @@
     const SEARCH_INPUT_ID = 'tmk-search-input';
     const PENDING_SEARCH_KEY = 'tmk-pending-search';
     const MODERN_LOST_QUERY_KEY = 'tmk-modern-lost-query-v2-launch';
+    const ACCEPT_STATION_COMPANY_KEY = 'tmk-accept-station-company';
+    const ACCEPT_STATION_INPUT_ID = 'tmk-accept-station-input';
+    const DEFAULT_ACCEPT_STATION_COMPANY = 'LAXCA';
     const OVERLAY_ID = 'tmk-overlay';
     const ROOT_GRID_ID = 'tmk-root-grid';
     const SUB_GRID_ID = 'tmk-sub-grid';
@@ -119,10 +122,34 @@
         window.__tmkUiMetrics = payload;
     }
 
+
+    // 从 sessionStorage 读取受理航站公司（缺省 LAXCA）
+    function readStoredAcceptStationCompany() {
+        try {
+            const raw = window.sessionStorage.getItem(ACCEPT_STATION_COMPANY_KEY);
+            if (raw != null && String(raw).trim() !== '') return String(raw).trim();
+        } catch (e) {}
+        return DEFAULT_ACCEPT_STATION_COMPANY;
+    }
+
+
+    // 同步到 window / top 与 sessionStorage，供其他 userscript 读取
+    function publishAcceptStationCompany(value) {
+        const v = String(value != null ? value : '').trim() || DEFAULT_ACCEPT_STATION_COMPANY;
+        try {
+            if (window.top) window.top.__tmkAcceptStationCompany = v;
+        } catch (e) {}
+        window.__tmkAcceptStationCompany = v;
+        try {
+            window.sessionStorage.setItem(ACCEPT_STATION_COMPANY_KEY, v);
+        } catch (e) {}
+    }
+
     function injectStyle(doc) {
         if (!doc || !doc.head) return;
         const m = calcUiMetrics();
         publishUiMetrics(m);
+        publishAcceptStationCompany(readStoredAcceptStationCompany());
         let style = doc.getElementById('tmk-ui-style');
         if (!style) {
             style = doc.createElement('style');
@@ -188,6 +215,20 @@
                 font-size: ${m.h1Size}px !important; font-weight: 100 !important; color: #fff !important;
                 margin: 0 0 10px 0 !important; letter-spacing: -1px !important;
             }
+            .tmk-root-title-row {
+                display: flex !important; align-items: baseline !important; flex-wrap: wrap !important;
+                gap: 0.35em 0.55em !important; margin: 0 0 10px 0 !important;
+            }
+            .tmk-root-title-row .tmk-h1 { margin: 0 !important; }
+            #${ACCEPT_STATION_INPUT_ID} {
+                flex: 0 1 auto !important; min-width: 3.5em !important; max-width: 18em !important;
+                font-family: inherit !important; font-size: ${m.h1Size}px !important; font-weight: 100 !important;
+                color: #fff !important; letter-spacing: -1px !important; line-height: 1.1 !important;
+                margin: 0 !important; padding: 0 !important; border: none !important; background: transparent !important;
+                outline: none !important; box-shadow: none !important; -webkit-appearance: none !important;
+                appearance: none !important;
+            }
+            #${ACCEPT_STATION_INPUT_ID}::placeholder { color: rgba(255, 255, 255, 0.45) !important; }
             .tmk-active-tag { display: none !important; }
             .tmk-grid { display: grid !important; gap: var(--tmk-gap) !important; grid-template-columns: repeat(auto-fill, var(--tmk-medium)) !important; }
 
@@ -621,7 +662,11 @@
                 overlay.innerHTML = `
                     <div id="tmk-panel-viewport">
                         <section class="tmk-page" id="tmk-root-page">
-                            <h1 class="tmk-h1">开始</h1>
+                            <div class="tmk-root-title-row">
+                                <h1 class="tmk-h1">开始</h1>
+                                <input type="text" id="${ACCEPT_STATION_INPUT_ID}" class="tmk-station-inline"
+                                    autocomplete="off" spellcheck="false" aria-label="受理航站公司" />
+                            </div>
                             <div class="tmk-grid" id="tmk-pinned-grid"></div>
                             <div class="tmk-grid" id="${ROOT_GRID_ID}"></div>
                         </section>
@@ -631,6 +676,14 @@
                         </section>
                     </div>`;
                 document.body.appendChild(overlay);
+
+                const stationInput = document.getElementById(ACCEPT_STATION_INPUT_ID);
+                if (stationInput) {
+                    stationInput.value = readStoredAcceptStationCompany();
+                    publishAcceptStationCompany(stationInput.value);
+                    stationInput.addEventListener('input', () => publishAcceptStationCompany(stationInput.value));
+                    stationInput.addEventListener('change', () => publishAcceptStationCompany(stationInput.value));
+                }
 
                 // 页面局部刷新或脚本重绘时，自动补建搜索按钮，避免依赖菜单按钮交互后才出现
                 setInterval(() => {
