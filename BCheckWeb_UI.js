@@ -45,13 +45,13 @@
                 name: '国航层级',
                 colors: {
                     overlayBackdrop: 'rgba(200, 200, 200, 0.3)',
-                    majorBrightColor: '#BD0000',
-                    majorDarkColor: '#2C3E50',
-                    fontColorBright: '#FFFFFF',
-                    fontColorDark: '#34495E',
-                    buttonBackground: '#f4f6f8',
+                    majorFocus: '#BD0000',
+                    minorFocus: '#2C3E50',
+                    minorFont: '#FFFFFF',
+                    majorFont: '#34495E',
+                    majorButton: '#f4f6f8',
                     inputBackground: '#f8f9fa',
-                    minorBrightColor: '#EDF1F5',
+                    minorButton: '#EDF1F5',
                     stationPlaceholder: 'rgba(255, 255, 255, 0.45)'
                 }
             }
@@ -73,49 +73,49 @@
     }
 
 
-    // 主题语义色 → CSS 扁平变量（供 applyThemeCss）；pickColor 仍接受旧下划线键名以便兼容
+    // 主题语义色 → CSS 扁平变量（供 applyThemeCss）
     function expandThemeColors(raw) {
         const base = DEFAULT_THEME_PACK.themes[0].colors;
         const c = Object.assign({}, base, raw || {});
-        const majorBright = pickColor(c, ['majorBrightColor', 'major_bright_color', 'majorBright', 'lv1Bg']);
-        const majorDark = pickColor(c, ['majorDarkColor', 'major_dark_color', 'majorDark', 'lv2Bg', 'kvToolBorder']);
-        const fontBright = pickColor(c, ['fontColorBright', 'font_color_bright', 'fontBright', 'h1']);
-        const fontDark = pickColor(c, ['fontColorDark', 'font_color_dark', 'fontDark', 'lv3Fg', 'fabFg']);
-        const buttonBg = pickColor(c, ['buttonBackground', 'button_background', 'fabBg', 'searchBg', 'lv5Bg']);
-        const inputBg = pickColor(c, ['inputBackground', 'input_background']);
-        const minorBright = pickColor(c, ['minorBrightColor', 'minor_bright_color']);
+        const majorFocus = pickColor(c, ['majorFocus']);
+        const minorFocus = pickColor(c, ['minorFocus']);
+        const minorFont = pickColor(c, ['minorFont']);
+        const majorFont = pickColor(c, ['majorFont']);
+        const majorButton = pickColor(c, ['majorButton']);
+        const inputBg = pickColor(c, ['inputBackground']);
+        const minorButton = pickColor(c, ['minorButton']);
         const out = {
             overlayBackdrop: pickColor(c, ['overlayBackdrop']),
-            lv1Bg: pickColor(c, ['lv1Bg'], majorBright),
-            kvToolFg: pickColor(c, ['kvToolFg'], majorBright),
-            lv2Bg: pickColor(c, ['lv2Bg'], majorDark),
-            fabHoverBorder: pickColor(c, ['fabHoverBorder'], majorDark),
-            searchInputBorder: pickColor(c, ['searchInputBorder'], majorDark),
-            kvToolBorder: pickColor(c, ['kvToolBorder'], majorDark),
-            tileHoverBorder: pickColor(c, ['tile_hover_border', 'tileHoverBorder'], majorDark),
-            h1: pickColor(c, ['h1'], fontBright),
-            stationInput: pickColor(c, ['stationInput'], fontBright),
-            lv1Fg: pickColor(c, ['lv1Fg'], fontBright),
-            lv2Fg: pickColor(c, ['lv2Fg'], fontBright),
-            lv4Fg: pickColor(c, ['lv4Fg'], fontDark),
-            lv3Fg: pickColor(c, ['lv3Fg'], fontDark),
-            fabFg: pickColor(c, ['fabFg'], fontDark),
-            searchInputFg: pickColor(c, ['searchInputFg'], fontDark),
-            lv5Fg: pickColor(c, ['lv5Fg'], fontDark),
-            searchPlaceholder: pickColor(c, ['searchPlaceholder'], fontDark),
-            fabBg: pickColor(c, ['fabBg'], buttonBg),
-            searchBg: pickColor(c, ['searchBg'], buttonBg),
-            lv5Bg: pickColor(c, ['lv5Bg'], buttonBg),
-            searchActiveBg: pickColor(c, ['searchActiveBg'], buttonBg),
-            lv4Bg: pickColor(c, ['lv4Bg'], minorBright),
+            lv1Bg: pickColor(c, ['lv1Bg'], majorFocus),
+            kvToolFg: pickColor(c, ['kvToolFg'], majorFocus),
+            lv2Bg: pickColor(c, ['lv2Bg'], minorFocus),
+            fabHoverBorder: pickColor(c, ['fabHoverBorder'], minorFocus),
+            searchInputBorder: pickColor(c, ['searchInputBorder'], minorFocus),
+            kvToolBorder: pickColor(c, ['kvToolBorder'], minorFocus),
+            tileHoverBorder: pickColor(c, ['tileHoverBorder'], minorFocus),
+            h1: pickColor(c, ['h1'], minorFont),
+            stationInput: pickColor(c, ['stationInput'], minorFont),
+            lv1Fg: pickColor(c, ['lv1Fg'], minorFont),
+            lv2Fg: pickColor(c, ['lv2Fg'], minorFont),
+            lv4Fg: pickColor(c, ['lv4Fg'], majorFont),
+            lv3Fg: pickColor(c, ['lv3Fg'], majorFont),
+            fabFg: pickColor(c, ['fabFg'], majorFont),
+            searchInputFg: pickColor(c, ['searchInputFg'], majorFont),
+            lv5Fg: pickColor(c, ['lv5Fg'], majorFont),
+            searchPlaceholder: pickColor(c, ['searchPlaceholder'], majorFont),
+            fabBg: pickColor(c, ['fabBg'], majorButton),
+            searchBg: pickColor(c, ['searchBg'], majorButton),
+            lv5Bg: pickColor(c, ['lv5Bg'], majorButton),
+            searchActiveBg: pickColor(c, ['searchActiveBg'], majorButton),
+            lv4Bg: pickColor(c, ['lv4Bg'], minorButton),
             searchInputBg: pickColor(c, ['searchInputBg'], inputBg),
-            fabBorder: pickColor(c, ['fabBorder'], majorDark),
-            searchBorder: pickColor(c, ['searchBorder'], majorDark),
-            searchActiveBorder: majorDark,
+            fabBorder: pickColor(c, ['fabBorder'], minorFocus),
+            searchBorder: pickColor(c, ['searchBorder'], minorFocus),
+            searchActiveBorder: minorFocus,
             stationPlaceholder: pickColor(c, ['stationPlaceholder']),
-            lv3Bg: pickColor(c, ['lv3Bg'], buttonBg),
-            searchLoadingBg: pickColor(c, ['search_loading_bg', 'searchLoadingBg'], buttonBg),
-            searchLoadingFg: pickColor(c, ['search_loading_fg', 'searchLoadingFg'], fontDark)
+            lv3Bg: pickColor(c, ['lv3Bg'], majorButton),
+            searchLoadingBg: pickColor(c, ['searchLoadingBg'], majorButton),
+            searchLoadingFg: pickColor(c, ['searchLoadingFg'], majorFont)
         };
         return out;
     }
