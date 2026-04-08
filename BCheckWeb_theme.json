@@ -5,15 +5,14 @@
       "id": 1,
       "name": "国航配色",
       "colors": {
-        "overlayBackdrop": "rgba(200, 200, 200, 0.3)",
+        "overlayBackdrop": "rgba(240, 110, 65, 0.1)",
         "majorFocus": "#BD0000",
         "minorFocus": "#2C3E50",
         "minorFont": "#FFFFFF",
         "majorFont": "#34495E",
-        "majorButton": "#f4f6f8",
+        "majorButton": "#f7f3f3",
         "inputBackground": "#f8f9fa",
-        "minorButton": "#EDF1F5",
-        "stationPlaceholder": "rgba(255, 255, 255, 0.45)"
+        "minorButton": "#f5f7f3"
       }
     },
     {
@@ -27,8 +26,7 @@
         "majorFont": "#FFFFFF",
         "majorButton": "#f4f6f8",
         "inputBackground": "#f8f9fa",
-        "minorButton": "rgba(0, 120, 120, 0.55)",
-        "stationPlaceholder": "rgba(255, 255, 255, 0.45)"
+        "minorButton": "rgba(0, 120, 120, 0.55)"
       }
     }
   ]

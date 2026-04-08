@@ -44,15 +44,14 @@
                 id: 1,
                 name: '国航层级',
                 colors: {
-                    overlayBackdrop: 'rgba(200, 200, 200, 0.3)',
+                    overlayBackdrop: 'rgba(240, 110, 65, 0.1)',
                     majorFocus: '#BD0000',
                     minorFocus: '#2C3E50',
                     minorFont: '#FFFFFF',
                     majorFont: '#34495E',
-                    majorButton: '#f4f6f8',
+                    majorButton: '#f7f3f3',
                     inputBackground: '#f8f9fa',
-                    minorButton: '#EDF1F5',
-                    stationPlaceholder: 'rgba(255, 255, 255, 0.45)'
+                    minorButton: '#f5f7f3'
                 }
             }
         ]
@@ -94,7 +93,6 @@
             kvToolBorder: pickColor(c, ['kvToolBorder'], minorFocus),
             tileHoverBorder: pickColor(c, ['tileHoverBorder'], minorFocus),
             h1: pickColor(c, ['h1'], minorFont),
-            stationInput: pickColor(c, ['stationInput'], minorFont),
             lv1Fg: pickColor(c, ['lv1Fg'], minorFont),
             lv2Fg: pickColor(c, ['lv2Fg'], minorFont),
             lv4Fg: pickColor(c, ['lv4Fg'], majorFont),
@@ -112,7 +110,6 @@
             fabBorder: pickColor(c, ['fabBorder'], minorFocus),
             searchBorder: pickColor(c, ['searchBorder'], minorFocus),
             searchActiveBorder: minorFocus,
-            stationPlaceholder: pickColor(c, ['stationPlaceholder']),
             lv3Bg: pickColor(c, ['lv3Bg'], majorButton),
             searchLoadingBg: pickColor(c, ['searchLoadingBg'], majorButton),
             searchLoadingFg: pickColor(c, ['searchLoadingFg'], majorFont)
@@ -445,12 +442,12 @@
             #${ACCEPT_STATION_INPUT_ID} {
                 flex: 0 1 auto !important; min-width: 3.5em !important; max-width: 18em !important;
                 font-family: inherit !important; font-weight: 100 !important;
-                color: var(${themeColorVarFromKey('stationInput')}) !important; letter-spacing: -1px !important;
+                color: var(${themeColorVarFromKey('h1')}) !important; letter-spacing: -1px !important;
                 margin: 0 !important; padding: 0 8px !important; border: none !important; background: transparent !important;
                 outline: none !important; box-shadow: none !important; -webkit-appearance: none !important;
                 appearance: none !important;
             }
-            #${ACCEPT_STATION_INPUT_ID}::placeholder { color: var(${themeColorVarFromKey('stationPlaceholder')}) !important; }
+            #${ACCEPT_STATION_INPUT_ID}::placeholder { color: inherit !important; opacity: 0.45 !important; }
             .tmk-active-tag { display: none !important; }
             .tmk-grid { display: grid !important; gap: var(--tmk-gap) !important; grid-template-columns: repeat(auto-fill, var(--tmk-medium)) !important; }
 
