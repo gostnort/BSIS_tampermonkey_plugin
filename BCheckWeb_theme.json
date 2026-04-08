@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "themes": [
+    {
+      "id": 1,
+      "name": "国航配色",
+      "colors": {
+        "overlayBackdrop": "rgba(200, 200, 200, 0.3)",
+        "majorBrightColor": "#BD0000",
+        "majorDarkColor": "#2C3E50",
+        "fontColorBright": "#FFFFFF",
+        "fontColorDark": "#34495E",
+        "buttonBackground": "#f4f6f8",
+        "inputBackground": "#f8f9fa",
+        "minorBrightColor": "#EDF1F5",
+        "stationPlaceholder": "rgba(255, 255, 255, 0.45)"
+      }
+    },
+    {
+      "id": 2,
+      "name": "蓝紫柔和系",
+      "colors": {
+        "overlayBackdrop": "rgba(200, 200, 200, 0.3)",
+        "majorBrightColor": "rgba(0, 90, 158, 0.78)",
+        "majorDarkColor": "rgba(0, 120, 120, 0.78)",
+        "fontColorBright": "#FFFFFF",
+        "fontColorDark": "#FFFFFF",
+        "buttonBackground": "#f4f6f8",
+        "inputBackground": "#f8f9fa",
+        "minorBrightColor": "rgba(0, 120, 120, 0.55)",
+        "stationPlaceholder": "rgba(255, 255, 255, 0.45)"
+      }
+    }
+  ]
+}

@@ -1,14 +1,13 @@
 // ==UserScript==
-// @name         BCheckWeb UI 瓷砖菜单 - 0.7.5
+// @name         BCheckWeb UI 瓷砖菜单 - 0.7.9
 // @namespace    http://tampermonkey.net/
-// @version      0.7.5
-// @description  修复按钮位置 | 标题动态联动 | 黄金比例间距 | 链接逻辑修复
+// @version      0.7.9
+// @description  修复按钮位置 | 标题动态联动 | 黄金比例间距 | 链接逻辑修复 | 主题 JSON 线上切换
 // @author       Gostnort
 // @match        http://60.247.100.98/BCheckWeb/*
 // @match        https://60.247.100.98/BCheckWeb/*
 // @match        http://202.96.17.98/BCheckWeb/*
 // @match        https://202.96.17.98/BCheckWeb/*
-// @grant        none
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -31,8 +30,195 @@
     const ROOT_GRID_ID = 'tmk-root-grid';
     const SUB_GRID_ID = 'tmk-sub-grid';
     const SYSTEM_GRID_ID = 'tmk-system-grid';
+    const THEME_STORAGE_KEY = 'tmk-theme-index';
+    const START_BTN_ID = 'tmk-start-theme-btn';
+    const THEME_JSON_URL = 'https://raw.githubusercontent.com/Gostnort/BSIS_tampermonkey_plugin/main/BCheckWeb_theme.json';
 
     const state = { overlayOpen: false, showingSub: false, currentGroup: null, searchExpanded: false };
+
+    // 仅内置 id=1 国航层级；默认色值只定义于此处，expandThemeColors 内不再写死 hex
+    const DEFAULT_THEME_PACK = {
+        version: 2,
+        themes: [
+            {
+                id: 1,
+                name: '国航层级',
+                colors: {
+                    overlayBackdrop: 'rgba(200, 200, 200, 0.3)',
+                    majorBrightColor: '#BD0000',
+                    majorDarkColor: '#2C3E50',
+                    fontColorBright: '#FFFFFF',
+                    fontColorDark: '#34495E',
+                    buttonBackground: '#f4f6f8',
+                    inputBackground: '#f8f9fa',
+                    minorBrightColor: '#EDF1F5',
+                    stationPlaceholder: 'rgba(255, 255, 255, 0.45)'
+                }
+            }
+        ]
+    };
+
+
+    function themeColorVarFromKey(key) {
+        return '--tmk-c-' + String(key).replace(/([A-Z])/g, '-$1').toLowerCase();
+    }
+
+
+    function pickColor(c, keys, fallback) {
+        for (let i = 0; i < keys.length; i += 1) {
+            const k = keys[i];
+            if (c[k] !== undefined && c[k] !== null && String(c[k]) !== '') return c[k];
+        }
+        return fallback;
+    }
+
+
+    // 主题语义色 → CSS 扁平变量（供 applyThemeCss）；pickColor 仍接受旧下划线键名以便兼容
+    function expandThemeColors(raw) {
+        const base = DEFAULT_THEME_PACK.themes[0].colors;
+        const c = Object.assign({}, base, raw || {});
+        const majorBright = pickColor(c, ['majorBrightColor', 'major_bright_color', 'majorBright', 'lv1Bg']);
+        const majorDark = pickColor(c, ['majorDarkColor', 'major_dark_color', 'majorDark', 'lv2Bg', 'kvToolBorder']);
+        const fontBright = pickColor(c, ['fontColorBright', 'font_color_bright', 'fontBright', 'h1']);
+        const fontDark = pickColor(c, ['fontColorDark', 'font_color_dark', 'fontDark', 'lv3Fg', 'fabFg']);
+        const buttonBg = pickColor(c, ['buttonBackground', 'button_background', 'fabBg', 'searchBg', 'lv5Bg']);
+        const inputBg = pickColor(c, ['inputBackground', 'input_background']);
+        const minorBright = pickColor(c, ['minorBrightColor', 'minor_bright_color']);
+        const out = {
+            overlayBackdrop: pickColor(c, ['overlayBackdrop']),
+            lv1Bg: pickColor(c, ['lv1Bg'], majorBright),
+            kvToolFg: pickColor(c, ['kvToolFg'], majorBright),
+            lv2Bg: pickColor(c, ['lv2Bg'], majorDark),
+            fabHoverBorder: pickColor(c, ['fabHoverBorder'], majorDark),
+            searchInputBorder: pickColor(c, ['searchInputBorder'], majorDark),
+            kvToolBorder: pickColor(c, ['kvToolBorder'], majorDark),
+            tileHoverBorder: pickColor(c, ['tile_hover_border', 'tileHoverBorder'], majorDark),
+            h1: pickColor(c, ['h1'], fontBright),
+            stationInput: pickColor(c, ['stationInput'], fontBright),
+            lv1Fg: pickColor(c, ['lv1Fg'], fontBright),
+            lv2Fg: pickColor(c, ['lv2Fg'], fontBright),
+            lv4Fg: pickColor(c, ['lv4Fg'], fontDark),
+            lv3Fg: pickColor(c, ['lv3Fg'], fontDark),
+            fabFg: pickColor(c, ['fabFg'], fontDark),
+            searchInputFg: pickColor(c, ['searchInputFg'], fontDark),
+            lv5Fg: pickColor(c, ['lv5Fg'], fontDark),
+            searchPlaceholder: pickColor(c, ['searchPlaceholder'], fontDark),
+            fabBg: pickColor(c, ['fabBg'], buttonBg),
+            searchBg: pickColor(c, ['searchBg'], buttonBg),
+            lv5Bg: pickColor(c, ['lv5Bg'], buttonBg),
+            searchActiveBg: pickColor(c, ['searchActiveBg'], buttonBg),
+            lv4Bg: pickColor(c, ['lv4Bg'], minorBright),
+            searchInputBg: pickColor(c, ['searchInputBg'], inputBg),
+            fabBorder: pickColor(c, ['fabBorder'], majorDark),
+            searchBorder: pickColor(c, ['searchBorder'], majorDark),
+            searchActiveBorder: majorDark,
+            stationPlaceholder: pickColor(c, ['stationPlaceholder']),
+            lv3Bg: pickColor(c, ['lv3Bg'], buttonBg),
+            searchLoadingBg: pickColor(c, ['search_loading_bg', 'searchLoadingBg'], buttonBg),
+            searchLoadingFg: pickColor(c, ['search_loading_fg', 'searchLoadingFg'], fontDark)
+        };
+        return out;
+    }
+
+
+    function readThemeIndex() {
+        try {
+            const v = parseInt(localStorage.getItem(THEME_STORAGE_KEY), 10);
+            return Number.isFinite(v) ? v : 0;
+        } catch (e) {
+            return 0;
+        }
+    }
+
+
+    function saveThemeIndex(i) {
+        try {
+            localStorage.setItem(THEME_STORAGE_KEY, String(i));
+        } catch (e) {}
+    }
+
+
+    function getCurrentThemeId() {
+        try {
+            const t = window.__tmkTheme;
+            if (t && t.id !== undefined && t.id !== null) return t.id;
+        } catch (e) {}
+        return 1;
+    }
+
+
+    function sortThemesById(arr) {
+        return arr.slice().sort((a, b) => Number(a.id) - Number(b.id));
+    }
+
+
+    async function fetchThemesPackOnline() {
+        try {
+            const r = await fetch(THEME_JSON_URL, { cache: 'no-store' });
+            if (!r.ok) return null;
+            const data = await r.json();
+            if (!data || !Array.isArray(data.themes) || !data.themes.length) return null;
+            return data;
+        } catch (e) {
+            return null;
+        }
+    }
+
+
+    function applyThemeCss(doc, theme) {
+        if (!doc || !doc.head || !theme || !theme.colors) return;
+        let el = doc.getElementById('tmk-theme-vars');
+        if (!el) {
+            el = doc.createElement('style');
+            el.id = 'tmk-theme-vars';
+            doc.head.insertBefore(el, doc.head.firstChild);
+        }
+        const lines = [];
+        Object.keys(theme.colors).forEach((k) => {
+            const v = theme.colors[k];
+            if (v === undefined || v === null || String(v) === '') return;
+            lines.push('  ' + themeColorVarFromKey(k) + ': ' + v + ';');
+        });
+        el.textContent = ':root {\n' + lines.join('\n') + '\n}';
+        try {
+            window.__tmkTheme = { id: theme.id, name: theme.name, colors: theme.colors };
+            if (window.top) window.top.__tmkTheme = window.__tmkTheme;
+        } catch (e) {}
+    }
+
+
+    async function bootstrapTheme(doc) {
+        const online = await fetchThemesPackOnline();
+        const themes = online && online.themes && online.themes.length
+            ? sortThemesById(online.themes)
+            : sortThemesById(DEFAULT_THEME_PACK.themes);
+        const n = themes.length;
+        let idx = readThemeIndex() % n;
+        if (idx < 0) idx += n;
+        const th = themes[idx];
+        applyThemeCss(doc, { id: th.id, name: th.name, colors: expandThemeColors(th.colors) });
+        try {
+            publishUiMetrics(calcUiMetrics());
+        } catch (e) {}
+    }
+
+
+    async function cycleTheme(doc) {
+        const online = await fetchThemesPackOnline();
+        const themes = online && online.themes && online.themes.length
+            ? sortThemesById(online.themes)
+            : sortThemesById(DEFAULT_THEME_PACK.themes);
+        const n = themes.length;
+        if (!n) return;
+        let idx = readThemeIndex() + 1;
+        if (idx >= n) idx = 0;
+        saveThemeIndex(idx);
+        const th = themes[idx];
+        applyThemeCss(doc, { id: th.id, name: th.name, colors: expandThemeColors(th.colors) });
+        try {
+            publishUiMetrics(calcUiMetrics());
+        } catch (e) {}
+    }
 
     // --- 1. 链接提取：使用 a.href DOM属性（浏览器已按 frame 自身 baseURI 解析好的绝对URL）---
     function extractHref(anchor) {
@@ -111,6 +297,10 @@
         if (!metrics) return;
         const med = Number(metrics.medium) || 92;
         const g = Number(metrics.gap) || 8;
+        let themeId = 1;
+        try {
+            themeId = getCurrentThemeId();
+        } catch (e) {}
         const payload = {
             small: Number(metrics.small) || 46,
             gap: g,
@@ -118,6 +308,7 @@
             bigTile: Number.isFinite(metrics.bigTile) ? Number(metrics.bigTile) : med * 2 + g,
             smallTileH: Number.isFinite(metrics.smallTileH) ? Number(metrics.smallTileH) : (med - g) / 2,
             h1Size: Number(metrics.h1Size) || 30,
+            themeId: themeId,
             ts: Date.now()
         };
         try {
@@ -151,9 +342,14 @@
 
     function injectStyle(doc) {
         if (!doc || !doc.head) return;
+        const def = DEFAULT_THEME_PACK.themes[0];
+        applyThemeCss(doc, { id: def.id, name: def.name, colors: expandThemeColors(def.colors) });
         const m = calcUiMetrics();
         publishUiMetrics(m);
         publishAcceptStationCompany(readStoredAcceptStationCompany());
+        setTimeout(() => {
+            bootstrapTheme(doc).catch(() => {});
+        }, 0);
         let style = doc.getElementById('tmk-ui-style');
         if (!style) {
             style = doc.createElement('style');
@@ -162,15 +358,13 @@
         }
         style.textContent = `
             :root {
-                --tmk-blue: 0, 90, 158; --tmk-teal: 0, 120, 120;
-                --tmk-purple: 81, 43, 129; --tmk-slate: 45, 125, 154;
                 --tmk-small: ${m.small}px; --tmk-medium: ${m.medium}px; --tmk-gap: ${m.gap}px;
                 --tmk-big-tile: ${m.bigTile}px;
                 --tmk-small-tile-h: ${m.smallTileH}px;
             }
             #${OVERLAY_ID} {
                 position: fixed!important; inset: 0!important; z-index: 2147483646!important;
-                display: none; background: rgba(200, 200, 200, 0.3)!important; backdrop-filter: blur(10px);
+                display: none; background: var(${themeColorVarFromKey('overlayBackdrop')})!important; backdrop-filter: blur(10px);
             }
             .tmk-page {
                 width: 100vw!important; height: 100%!important; overflow-y: auto!important;
@@ -185,55 +379,78 @@
                 position: fixed !important; left: 30px !important; top: 20px !important;
                 z-index: 2147483647 !important; width: 46px !important; height: 46px !important;
                 display: flex !important; align-items: center !important; justify-content: center !important;
-                background: #f4f6f8 !important; color: #4f5d70 !important;
-                border: 1px solid #cfd7df !important; border-radius: 999px !important;
+                background: var(${themeColorVarFromKey('fabBg')}) !important; color: var(${themeColorVarFromKey('fabFg')}) !important;
+                border: 1px solid var(${themeColorVarFromKey('fabBorder')}) !important; border-radius: 999px !important;
                 font-family: "Segoe UI Light", sans-serif !important; font-size: 30px !important;
                 font-weight: 100 !important; cursor: pointer !important;
-                transition: background 0.2s ease, border-color 0.2s ease !important;
+                transition: border-color 0.2s ease !important;
             }
-            #${FAB_ID}:hover { background: #eef3f8 !important; border-color: #aebac8 !important; }
+            #${FAB_ID}:hover { background: var(${themeColorVarFromKey('fabBg')}) !important; border-color: var(${themeColorVarFromKey('fabHoverBorder')}) !important; }
             #${SEARCH_FAB_ID} {
                 position: fixed !important; right: 20px !important; top: 20px !important;
                 z-index: 2147483647 !important; width: 46px !important; height: 46px !important;
                 display: inline-flex !important; align-items: center !important; justify-content: center !important;
-                color: #4f5d70 !important; font-size: 23px !important; line-height: 1 !important;
-                background: #f4f6f8 !important;
-                border: 1px solid #cfd7df !important; border-radius: 999px !important;
-                box-shadow: none !important; cursor: pointer !important; transition: background 0.2s ease, border-color 0.2s ease !important;
+                color: var(${themeColorVarFromKey('fabFg')}) !important; font-size: 23px !important; line-height: 1 !important;
+                background: var(${themeColorVarFromKey('searchBg')}) !important;
+                border: 1px solid transparent !important; border-radius: 999px !important;
+                box-shadow: none !important; cursor: pointer !important; transition: border-color 0.2s ease !important;
             }
+            #${SEARCH_FAB_ID}:hover,
             #${SEARCH_FAB_ID}.tmk-search-active {
-                background: #eef3f8 !important;
-                border-color: #aebac8 !important;
+                background: var(${themeColorVarFromKey('searchBg')}) !important;
+                border-color: var(${themeColorVarFromKey('searchActiveBorder')}) !important;
             }
             #${SEARCH_INPUT_ID} {
                 position: fixed !important; right: 72px !important; top: 26px !important;
                 z-index: 2147483647 !important; width: 340px !important; height: 34px !important;
                 box-sizing: border-box !important; border-radius: 6px !important;
-                border: 1px solid #b8c5d4 !important;
-                padding: 0 10px !important; background: #ffffff !important;
-                color: #1d2a38 !important; outline: none !important;
+                border: 1px solid var(${themeColorVarFromKey('searchInputBorder')}) !important;
+                padding: 0 10px !important; background: var(${themeColorVarFromKey('searchInputBg')}) !important;
+                color: var(${themeColorVarFromKey('searchInputFg')}) !important; outline: none !important;
+            }
+            #${SEARCH_INPUT_ID}.tmk-search-loading {
+                background: var(${themeColorVarFromKey('searchLoadingBg')}) !important;
+                color: var(${themeColorVarFromKey('searchLoadingFg')}) !important;
             }
             #${SEARCH_INPUT_ID}::placeholder {
-                color: #8a97a6 !important;
+                color: var(${themeColorVarFromKey('searchPlaceholder')}) !important;
             }
             .tmk-h1 {
-                font-size: ${m.h1Size}px !important; font-weight: 100 !important; color: #fff !important;
+                font-size: ${m.h1Size}px !important; font-weight: 100 !important; color: var(${themeColorVarFromKey('h1')}) !important;
                 margin: 0 0 10px 0 !important; letter-spacing: -1px !important;
             }
             .tmk-root-title-row {
-                display: flex !important; align-items: baseline !important; flex-wrap: wrap !important;
+                display: flex !important; align-items: center !important; flex-wrap: wrap !important;
                 gap: 0.35em 0.55em !important; margin: 0 0 10px 0 !important;
             }
             .tmk-root-title-row .tmk-h1 { margin: 0 !important; }
+            .tmk-root-title-row .tmk-start-btn,
+            .tmk-root-title-row #${ACCEPT_STATION_INPUT_ID} {
+                height: var(--tmk-small-tile-h) !important;
+                min-height: var(--tmk-small-tile-h) !important;
+                box-sizing: border-box !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                font-size: min(${m.h1Size}px, calc(var(--tmk-small-tile-h) * 0.85)) !important;
+                line-height: 1 !important;
+            }
+            .tmk-start-btn {
+                font-family: inherit !important;
+                font-weight: 100 !important;
+                letter-spacing: inherit !important;
+                background: transparent !important; border: none !important; padding: 0 4px !important; margin: 0 !important;
+                cursor: pointer !important; text-align: left !important;
+                -webkit-appearance: none !important; appearance: none !important; box-shadow: none !important;
+            }
             #${ACCEPT_STATION_INPUT_ID} {
                 flex: 0 1 auto !important; min-width: 3.5em !important; max-width: 18em !important;
-                font-family: inherit !important; font-size: ${m.h1Size}px !important; font-weight: 100 !important;
-                color: #fff !important; letter-spacing: -1px !important; line-height: 1.1 !important;
-                margin: 0 !important; padding: 0 !important; border: none !important; background: transparent !important;
+                font-family: inherit !important; font-weight: 100 !important;
+                color: var(${themeColorVarFromKey('stationInput')}) !important; letter-spacing: -1px !important;
+                margin: 0 !important; padding: 0 8px !important; border: none !important; background: transparent !important;
                 outline: none !important; box-shadow: none !important; -webkit-appearance: none !important;
                 appearance: none !important;
             }
-            #${ACCEPT_STATION_INPUT_ID}::placeholder { color: rgba(255, 255, 255, 0.45) !important; }
+            #${ACCEPT_STATION_INPUT_ID}::placeholder { color: var(${themeColorVarFromKey('stationPlaceholder')}) !important; }
             .tmk-active-tag { display: none !important; }
             .tmk-grid { display: grid !important; gap: var(--tmk-gap) !important; grid-template-columns: repeat(auto-fill, var(--tmk-medium)) !important; }
 
@@ -255,7 +472,7 @@
                 box-sizing: border-box !important;
                 width: var(--tmk-medium) !important; height: var(--tmk-medium) !important;
                 border: 0 !important; padding: 15px !important; text-align: left !important;
-                cursor: pointer !important; transition: transform 0.15s ease, filter 0.15s ease !important;
+                cursor: pointer !important; transition: transform 0.15s ease, box-shadow 0.15s ease !important;
             }
             .tmk-tile--big {
                 width: var(--tmk-big-tile) !important; height: var(--tmk-medium) !important;
@@ -265,17 +482,19 @@
                 padding: 6px 12px !important;
             }
             .tmk-tile--small .tmk-title { font-size: 12px !important; line-height: 1.15 !important; }
-            .tmk-tile:hover { transform: scale(1.03); }
-            .tmk-lv1:hover, .tmk-lv2:hover { filter: brightness(1.12); }
-            .tmk-lv3:hover, .tmk-lv4:hover, .tmk-lv5:hover { filter: brightness(0.96); }
+            .tmk-tile:hover {
+                transform: scale(1.03);
+                filter: none !important;
+                box-shadow: inset 0 0 0 2px var(${themeColorVarFromKey('tileHoverBorder')}) !important;
+            }
             .tmk-title { font-size: 18px !important; line-height: 1.2 !important; }
-            .tmk-lv1 { background: #BD0000 !important; color: #FFFFFF !important; }
-            .tmk-lv2 { background: #2C3E50 !important; color: #FFFFFF !important; }
-            .tmk-lv3 { background: #EDF1F5 !important; color: #34495E !important; }
-            .tmk-tile--kv-tool.tmk-lv3 { border: 2px solid #2C3E50 !important; }
-            .tmk-tile--kv-tool.tmk-lv3 .tmk-title { color: #BD0000 !important; }
-            .tmk-lv4 { background: #F8F9FA !important; color: #6C757D !important; }
-            .tmk-lv5 { background: #E9ECEF !important; color: #495057 !important; }
+            .tmk-lv1 { background: var(${themeColorVarFromKey('lv1Bg')}) !important; color: var(${themeColorVarFromKey('lv1Fg')}) !important; }
+            .tmk-lv2 { background: var(${themeColorVarFromKey('lv2Bg')}) !important; color: var(${themeColorVarFromKey('lv2Fg')}) !important; }
+            .tmk-lv3 { background: var(${themeColorVarFromKey('lv3Bg')}) !important; color: var(${themeColorVarFromKey('lv3Fg')}) !important; }
+            .tmk-tile--kv-tool.tmk-lv3 { border: 2px solid var(${themeColorVarFromKey('kvToolBorder')}) !important; }
+            .tmk-tile--kv-tool.tmk-lv3 .tmk-title { color: var(${themeColorVarFromKey('kvToolFg')}) !important; }
+            .tmk-lv4 { background: var(${themeColorVarFromKey('lv4Bg')}) !important; color: var(${themeColorVarFromKey('lv4Fg')}) !important; }
+            .tmk-lv5 { background: var(${themeColorVarFromKey('lv5Bg')}) !important; color: var(${themeColorVarFromKey('lv5Fg')}) !important; }
             .tmk-tile div:not(.tmk-title) { display: none !important; }
         `;
     }
@@ -284,8 +503,8 @@
     function showRootPage(overlay, fab) {
         overlay.querySelector('#tmk-root-page').style.display = 'block';
         overlay.querySelector('#tmk-sub-page').style.display = 'none';
-        // 首页标题重置为“开始”
-        const h1 = overlay.querySelector('#tmk-root-page .tmk-h1');
+        // 首页标题重置为“开始”（隐藏按钮，用于切换主题）
+        const h1 = overlay.querySelector('#tmk-root-page .tmk-start-btn') || overlay.querySelector('#tmk-root-page .tmk-h1');
         if (h1) h1.textContent = '开始';
         state.showingSub = false; fab.textContent = '✕';
     }
@@ -446,8 +665,9 @@
         if (searchFab) searchFab.classList.remove('tmk-search-active');
         if (searchInput) {
             searchInput.disabled = false;
-            searchInput.style.background = '#ffffff';
-            searchInput.style.color = '#1d2a38';
+            searchInput.classList.remove('tmk-search-loading');
+            searchInput.style.removeProperty('background');
+            searchInput.style.removeProperty('color');
             searchInput.style.display = 'none';
             searchInput.value = '';
         }
@@ -458,14 +678,14 @@
         if (searchFab && loading) searchFab.classList.add('tmk-search-active');
         if (loading) {
             searchInput.disabled = true;
-            searchInput.style.background = '#e3e7ed';
-            searchInput.style.color = '#5f6b7a';
+            searchInput.classList.add('tmk-search-loading');
             searchInput.value = '页面加载中……';
             return;
         }
         searchInput.disabled = false;
-        searchInput.style.background = '#ffffff';
-        searchInput.style.color = '#1d2a38';
+        searchInput.classList.remove('tmk-search-loading');
+        searchInput.style.removeProperty('background');
+        searchInput.style.removeProperty('color');
     }
 
     function setSearchShortcutVisible(visible) {
@@ -735,7 +955,7 @@
                     <div id="tmk-panel-viewport">
                         <section class="tmk-page" id="tmk-root-page">
                             <div class="tmk-root-title-row">
-                                <h1 class="tmk-h1">开始</h1>
+                                <button type="button" id="${START_BTN_ID}" class="tmk-h1 tmk-start-btn">开始</button>
                                 <input type="text" id="${ACCEPT_STATION_INPUT_ID}" class="tmk-station-inline"
                                     autocomplete="off" spellcheck="false" aria-label="受理航站公司" />
                             </div>
@@ -756,6 +976,15 @@
                     publishAcceptStationCompany(stationInput.value);
                     stationInput.addEventListener('input', () => publishAcceptStationCompany(stationInput.value));
                     stationInput.addEventListener('change', () => publishAcceptStationCompany(stationInput.value));
+                }
+
+                const startThemeBtn = document.getElementById(START_BTN_ID);
+                if (startThemeBtn) {
+                    startThemeBtn.addEventListener('click', (evt) => {
+                        evt.preventDefault();
+                        evt.stopPropagation();
+                        cycleTheme(document).catch(() => {});
+                    });
                 }
 
                 // 页面局部刷新或脚本重绘时，自动补建搜索按钮，避免依赖菜单按钮交互后才出现
