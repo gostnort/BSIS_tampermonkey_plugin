@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         BCheckWeb UI 瓷砖菜单 - 0.7.9
+// @name         BCheckWeb UI 瓷砖菜单 - 0.7.10
 // @namespace    http://tampermonkey.net/
-// @version      0.7.9
+// @version      0.7.10
 // @description  修复按钮位置 | 标题动态联动 | 黄金比例间距 | 链接逻辑修复 | 主题 JSON 线上切换
 // @author       Gostnort
 // @match        http://60.247.100.98/BCheckWeb/*
@@ -23,6 +23,7 @@
     const SEARCH_INPUT_ID = 'tmk-search-input';
     const PENDING_SEARCH_KEY = 'tmk-pending-search';
     const MODERN_LOST_QUERY_KEY = 'tmk-modern-lost-query-v2-launch';
+    const FORCE_CLOSE_VIEWS_KEY = 'tmk-force-close-views-ts';
     const ACCEPT_STATION_COMPANY_KEY = 'tmk-accept-station-company';
     const ACCEPT_STATION_INPUT_ID = 'tmk-accept-station-input';
     const DEFAULT_ACCEPT_STATION_COMPANY = 'LAXCA';
@@ -33,25 +34,33 @@
     const THEME_STORAGE_KEY = 'tmk-theme-index';
     const START_BTN_ID = 'tmk-start-theme-btn';
     const THEME_JSON_URL = 'https://raw.githubusercontent.com/Gostnort/BSIS_tampermonkey_plugin/main/BCheckWeb_theme.json';
+    const DEFAULT_Z_LAYERS = Object.freeze({
+        basePage: 0,
+        backgroundCover: 100,
+        mainFunctionView: 500,
+        functionButton: 600,
+        searchControls: 900,
+        floatingButton: 1000
+    });
 
     const state = { overlayOpen: false, showingSub: false, currentGroup: null, searchExpanded: false };
 
-    // 仅内置 id=1 国航层级；默认色值只定义于此处，expandThemeColors 内不再写死 hex
+    // 仅内置 id=2 新建少收查询默认；id=1 仅在点击“开始”后从远端加载
     const DEFAULT_THEME_PACK = {
         version: 2,
         themes: [
             {
-                id: 1,
-                name: '国航层级',
+                id: 2,
+                name: '新建少收查询默认',
                 colors: {
-                    overlayBackdrop: 'rgba(240, 110, 65, 0.1)',
-                    majorFocus: '#BD0000',
-                    minorFocus: '#2C3E50',
+                    overlayBackdrop: '0.4',
+                    majorFocus: '#3f89d0',
+                    minorFocus: '#8fb1cc',
                     minorFont: '#FFFFFF',
-                    majorFont: '#34495E',
-                    majorButton: '#f7f3f3',
+                    majorFont: '#111111',
+                    majorButton: '#dfe6ee',
                     inputBackground: '#f8f9fa',
-                    minorButton: '#f5f7f3'
+                    minorButton: '#8cc7e8'
                 }
             }
         ]
@@ -60,6 +69,32 @@
 
     function themeColorVarFromKey(key) {
         return '--tmk-c-' + String(key).replace(/([A-Z])/g, '-$1').toLowerCase();
+    }
+
+
+    function zLayerCssVarFromKey(key) {
+        return '--tmk-z-' + String(key).replace(/([A-Z])/g, '-$1').toLowerCase();
+    }
+
+
+    function normalizeZLayers(raw) {
+        const out = Object.assign({}, DEFAULT_Z_LAYERS);
+        if (!raw || typeof raw !== 'object') return out;
+        Object.keys(DEFAULT_Z_LAYERS).forEach((k) => {
+            const v = Number(raw[k]);
+            if (Number.isFinite(v)) out[k] = v;
+        });
+        return out;
+    }
+
+
+    function publishZLayers(raw) {
+        const payload = normalizeZLayers(raw);
+        try {
+            if (window.top) window.top.__tmkZLayers = payload;
+        } catch (e) {}
+        window.__tmkZLayers = payload;
+        return payload;
     }
 
 
@@ -83,8 +118,20 @@
         const majorButton = pickColor(c, ['majorButton']);
         const inputBg = pickColor(c, ['inputBackground']);
         const minorButton = pickColor(c, ['minorButton']);
+        const overlayOpacityRaw = pickColor(c, ['overlayBackdrop'], '0.4');
+        let overlayOpacity = parseFloat(String(overlayOpacityRaw).replace(/[^\d.]/g, ''));
+        if (!Number.isFinite(overlayOpacity)) overlayOpacity = 0.4;
+        overlayOpacity = Math.max(0, Math.min(1, overlayOpacity));
+        const overlayPercent = Math.max(0, Math.min(100, Math.round(overlayOpacity * 100)));
         const out = {
-            overlayBackdrop: pickColor(c, ['overlayBackdrop']),
+            overlayBackdrop: 'color-mix(in srgb, ' + minorButton + ' ' + overlayPercent + '%, transparent)',
+            majorFocus: majorFocus,
+            majorFont: majorFont,
+            minorFont: minorFont,
+            minorFocus: minorFocus,
+            majorButton: majorButton,
+            inputBackground: inputBg,
+            minorButton: minorButton,
             lv1Bg: pickColor(c, ['lv1Bg'], majorFocus),
             kvToolFg: pickColor(c, ['kvToolFg'], majorFocus),
             lv2Bg: pickColor(c, ['lv2Bg'], minorFocus),
@@ -121,9 +168,9 @@
     function readThemeIndex() {
         try {
             const v = parseInt(localStorage.getItem(THEME_STORAGE_KEY), 10);
-            return Number.isFinite(v) ? v : 0;
+            return Number.isFinite(v) ? v : 1;
         } catch (e) {
-            return 0;
+            return 1;
         }
     }
 
@@ -140,7 +187,7 @@
             const t = window.__tmkTheme;
             if (t && t.id !== undefined && t.id !== null) return t.id;
         } catch (e) {}
-        return 1;
+        return 2;
     }
 
 
@@ -246,9 +293,29 @@
     }
 
 
+    function setUiOverlayState(open) {
+        try {
+            if (window.top) window.top.__tmkUiOverlayOpen = !!open;
+        } catch (e) {}
+        window.__tmkUiOverlayOpen = !!open;
+    }
+
+
+    function broadcastForceCloseViews() {
+        const ts = Date.now();
+        try {
+            if (window.top) window.top.__tmkForceCloseViewsTs = ts;
+        } catch (e) {}
+        window.__tmkForceCloseViewsTs = ts;
+        try {
+            window.sessionStorage.setItem(FORCE_CLOSE_VIEWS_KEY, String(ts));
+        } catch (e) {}
+    }
+
+
     function markModernLostQueryLaunch(linkText) {
         const text = String(linkText || '').replace(/\s+/g, '');
-        if (!/新建少收查询/.test(text)) return;
+        if (!/新建少收查询|新建少收/.test(text)) return;
         try {
             window.sessionStorage.setItem(MODERN_LOST_QUERY_KEY, String(Date.now()));
         } catch (e) {}
@@ -340,13 +407,12 @@
     function injectStyle(doc) {
         if (!doc || !doc.head) return;
         const def = DEFAULT_THEME_PACK.themes[0];
+        saveThemeIndex(1);
         applyThemeCss(doc, { id: def.id, name: def.name, colors: expandThemeColors(def.colors) });
         const m = calcUiMetrics();
+        const z = publishZLayers();
         publishUiMetrics(m);
         publishAcceptStationCompany(readStoredAcceptStationCompany());
-        setTimeout(() => {
-            bootstrapTheme(doc).catch(() => {});
-        }, 0);
         let style = doc.getElementById('tmk-ui-style');
         if (!style) {
             style = doc.createElement('style');
@@ -358,10 +424,20 @@
                 --tmk-small: ${m.small}px; --tmk-medium: ${m.medium}px; --tmk-gap: ${m.gap}px;
                 --tmk-big-tile: ${m.bigTile}px;
                 --tmk-small-tile-h: ${m.smallTileH}px;
+                ${zLayerCssVarFromKey('basePage')}: ${z.basePage};
+                ${zLayerCssVarFromKey('backgroundCover')}: ${z.backgroundCover};
+                ${zLayerCssVarFromKey('mainFunctionView')}: ${z.mainFunctionView};
+                ${zLayerCssVarFromKey('functionButton')}: ${z.functionButton};
+                ${zLayerCssVarFromKey('searchControls')}: ${z.searchControls};
+                ${zLayerCssVarFromKey('floatingButton')}: ${z.floatingButton};
             }
             #${OVERLAY_ID} {
-                position: fixed!important; inset: 0!important; z-index: 2147483646!important;
+                position: fixed!important; inset: 0!important; z-index: var(${zLayerCssVarFromKey('mainFunctionView')})!important;
                 display: none; background: var(${themeColorVarFromKey('overlayBackdrop')})!important; backdrop-filter: blur(10px);
+            }
+            #tmk-panel-viewport {
+                position: relative !important;
+                z-index: var(${zLayerCssVarFromKey('mainFunctionView')}) !important;
             }
             .tmk-page {
                 width: 100vw!important; height: 100%!important; overflow-y: auto!important;
@@ -371,10 +447,12 @@
                 padding-bottom: 60px !important;
                 padding-right: 40px !important;
                 padding-left: clamp(80px, 12vw, 160px) !important;
+                position: relative !important;
+                z-index: var(${zLayerCssVarFromKey('mainFunctionView')}) !important;
             }
             #${FAB_ID} {
                 position: fixed !important; left: 30px !important; top: 20px !important;
-                z-index: 2147483647 !important; width: 46px !important; height: 46px !important;
+                z-index: var(${zLayerCssVarFromKey('floatingButton')}) !important; width: 46px !important; height: 46px !important;
                 display: flex !important; align-items: center !important; justify-content: center !important;
                 background: var(${themeColorVarFromKey('fabBg')}) !important; color: var(${themeColorVarFromKey('fabFg')}) !important;
                 border: 1px solid var(${themeColorVarFromKey('fabBorder')}) !important; border-radius: 999px !important;
@@ -385,7 +463,7 @@
             #${FAB_ID}:hover { background: var(${themeColorVarFromKey('fabBg')}) !important; border-color: var(${themeColorVarFromKey('fabHoverBorder')}) !important; }
             #${SEARCH_FAB_ID} {
                 position: fixed !important; right: 20px !important; top: 20px !important;
-                z-index: 2147483647 !important; width: 46px !important; height: 46px !important;
+                z-index: var(${zLayerCssVarFromKey('searchControls')}) !important; width: 46px !important; height: 46px !important;
                 display: inline-flex !important; align-items: center !important; justify-content: center !important;
                 color: var(${themeColorVarFromKey('fabFg')}) !important; font-size: 23px !important; line-height: 1 !important;
                 background: var(${themeColorVarFromKey('searchBg')}) !important;
@@ -399,7 +477,7 @@
             }
             #${SEARCH_INPUT_ID} {
                 position: fixed !important; right: 72px !important; top: 26px !important;
-                z-index: 2147483647 !important; width: 340px !important; height: 34px !important;
+                z-index: var(${zLayerCssVarFromKey('searchControls')}) !important; width: 340px !important; height: 34px !important;
                 box-sizing: border-box !important; border-radius: 6px !important;
                 border: 1px solid var(${themeColorVarFromKey('searchInputBorder')}) !important;
                 padding: 0 10px !important; background: var(${themeColorVarFromKey('searchInputBg')}) !important;
@@ -419,6 +497,8 @@
             .tmk-root-title-row {
                 display: flex !important; align-items: center !important; flex-wrap: wrap !important;
                 gap: 0.35em 0.55em !important; margin: 0 0 10px 0 !important;
+                position: relative !important;
+                z-index: var(${zLayerCssVarFromKey('functionButton')}) !important;
             }
             .tmk-root-title-row .tmk-h1 { margin: 0 !important; }
             .tmk-root-title-row .tmk-start-btn,
@@ -438,6 +518,8 @@
                 background: transparent !important; border: none !important; padding: 0 4px !important; margin: 0 !important;
                 cursor: pointer !important; text-align: left !important;
                 -webkit-appearance: none !important; appearance: none !important; box-shadow: none !important;
+                position: relative !important;
+                z-index: var(${zLayerCssVarFromKey('functionButton')}) !important;
             }
             #${ACCEPT_STATION_INPUT_ID} {
                 flex: 0 1 auto !important; min-width: 3.5em !important; max-width: 18em !important;
@@ -450,6 +532,10 @@
             #${ACCEPT_STATION_INPUT_ID}::placeholder { color: inherit !important; opacity: 0.45 !important; }
             .tmk-active-tag { display: none !important; }
             .tmk-grid { display: grid !important; gap: var(--tmk-gap) !important; grid-template-columns: repeat(auto-fill, var(--tmk-medium)) !important; }
+            #${ROOT_GRID_ID}, #${SUB_GRID_ID}, #${SYSTEM_GRID_ID}, #tmk-pinned-grid {
+                position: relative !important;
+                z-index: var(${zLayerCssVarFromKey('functionButton')}) !important;
+            }
 
             /* 常驻少收：两侧大磁贴 + 中间标准磁贴 */
             #tmk-pinned-grid.tmk-pinned-grid--wide {
@@ -580,7 +666,9 @@
             row.forEach(l => {
                 pinnedGrid.appendChild(buildTile(doc, l.text, 'tmk-lv1', () => {
                     markModernLostQueryLaunch(l.text);
-                    navigateToContent(l.href); closeOverlay(overlay, fab);
+                    broadcastForceCloseViews();
+                    closeOverlay(overlay, fab);
+                    navigateToContent(l.href);
                 }, tileSizePinnedClass(l.text), tileLv3OutlineClass(l.text)));
             });
         }
@@ -595,7 +683,9 @@
                 g.links.forEach(l => {
                     subGrid.appendChild(buildTile(doc, l.text, tileLevelClass(l.text, g.title), () => {
                         markModernLostQueryLaunch(l.text);
-                        navigateToContent(l.href); closeOverlay(overlay, fab);
+                        broadcastForceCloseViews();
+                        closeOverlay(overlay, fab);
+                        navigateToContent(l.href);
                     }, '', tileLv3OutlineClass(l.text)));
                 });
                 showSubPage(overlay, fab, g.title);
@@ -614,7 +704,9 @@
                     sysG.links.forEach(l => {
                         subGrid.appendChild(buildTile(doc, l.text, tileLevelClass(l.text, sysG.title), () => {
                             markModernLostQueryLaunch(l.text);
-                            navigateToContent(l.href); closeOverlay(overlay, fab);
+                            broadcastForceCloseViews();
+                            closeOverlay(overlay, fab);
+                            navigateToContent(l.href);
                         }, '', tileLv3OutlineClass(l.text)));
                     });
                     showSubPage(overlay, fab, sysG.title);
@@ -633,6 +725,7 @@
 
     function closeOverlay(overlay, fab) {
         overlay.style.display = 'none'; state.overlayOpen = false; fab.textContent = '☰';
+        setUiOverlayState(false);
         setSearchShortcutVisible(false);
     }
 
@@ -966,6 +1059,7 @@
                         </section>
                     </div>`;
                 document.body.appendChild(overlay);
+                setUiOverlayState(false);
 
                 const stationInput = document.getElementById(ACCEPT_STATION_INPUT_ID);
                 if (stationInput) {
@@ -994,6 +1088,7 @@
                     if (!state.overlayOpen) {
                         overlay.style.display = 'block'; renderTiles(document, overlay, fab);
                         state.overlayOpen = true; showRootPage(overlay, fab);
+                        setUiOverlayState(true);
                         setSearchShortcutVisible(true);
                     } else if (state.showingSub) {
                         showRootPage(overlay, fab);

@@ -5,28 +5,28 @@
       "id": 1,
       "name": "国航配色",
       "colors": {
-        "overlayBackdrop": "rgba(240, 110, 65, 0.1)",
-        "majorFocus": "#BD0000",
-        "minorFocus": "#2C3E50",
-        "minorFont": "#FFFFFF",
-        "majorFont": "#34495E",
-        "majorButton": "#f7f3f3",
-        "inputBackground": "#f8f9fa",
-        "minorButton": "#f5f7f3"
+        "overlayBackdrop": "0.1",      
+        "majorFocus": "#BD0000",                           
+        "minorFocus": "#2a2222",                           
+        "minorFont": "#FFFFFF",                            
+        "majorFont": "#22272a",                            
+        "majorButton": "#f7f3f3",                          
+        "inputBackground": "#f8f9fa",                      
+        "minorButton": "#f5f7f3"                           
       }
     },
     {
       "id": 2,
-      "name": "蓝紫柔和系",
+      "name": "新建少收查询默认",
       "colors": {
-        "overlayBackdrop": "rgba(200, 200, 200, 0.3)",
-        "majorFocus": "rgba(0, 90, 158, 0.78)",
-        "minorFocus": "rgba(0, 120, 120, 0.78)",
+        "overlayBackdrop": "0.4",
+        "majorFocus": "#3f89d0",
+        "minorFocus": "#8fb1cc",
         "minorFont": "#FFFFFF",
-        "majorFont": "#FFFFFF",
-        "majorButton": "#f4f6f8",
+        "majorFont": "#111111",
+        "majorButton": "#dfe6ee",
         "inputBackground": "#f8f9fa",
-        "minorButton": "rgba(0, 120, 120, 0.55)"
+        "minorButton": "#8cc7e8"
       }
     }
   ]

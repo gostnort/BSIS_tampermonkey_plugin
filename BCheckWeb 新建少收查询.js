@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         BCheckWeb 新建少收查询（统一 2.1 + Step2）
+// @name         BCheckWeb 新建少收查询
 // @namespace    http://tampermonkey.net/
 // @version      3.1.0
-// @description  新建少收查询：第一步现代表单 + 第二步离港壳层（对齐独立 step2 v1.4.5：jQuery change、LAX 自动勾选、无详情单选时选最后已勾选航段）；共享玻璃/工具栏（2.1 视觉）
+// @description  新建少收查询壳
 // @author       Gostnort
 // @match        http://60.247.100.98/BCheckWeb/*
 // @match        https://60.247.100.98/BCheckWeb/*
@@ -29,6 +29,8 @@
     const TOOLBAR_ID = 'tmk-lqv2-toolbar';
     const GLASS_ID = 'tmk-lqv2-glass';
     const MODE_CLASS = 'tmk-step2-modern';
+    const MODERN_LOST_QUERY_KEY = 'tmk-modern-lost-query-v2-launch';
+    const FORCE_CLOSE_VIEWS_KEY = 'tmk-force-close-views-ts';
     const LAX_DEST = 'LAX';
     const BAGGAGE_TRIPLE_TO_AIRLINE = Object.freeze({
         '999': 'CA',
@@ -37,6 +39,24 @@
         '324': 'SC'
     });
     const MONTH_EN3 = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    const DEFAULT_Z_LAYERS = Object.freeze({
+        basePage: 0,
+        backgroundCover: 100,
+        mainFunctionView: 500,
+        functionButton: 600,
+        searchControls: 900,
+        floatingButton: 1000
+    });
+    const THEME2_FALLBACK_COLORS = Object.freeze({
+        overlayBackdrop: '0.4',
+        majorFocus: '#3f89d0',
+        minorFocus: '#8fb1cc',
+        minorFont: '#FFFFFF',
+        majorFont: '#111111',
+        majorButton: '#dfe6ee',
+        inputBackground: '#f8f9fa',
+        minorButton: '#8cc7e8'
+    });
     const state = {
         page: null,
         mode: 'modern',
@@ -58,7 +78,8 @@
         observerRoot: null,
         pollId: null,
         syncTimer: null,
-        laxAutoDoneByBlock: null
+        laxAutoDoneByBlock: null,
+        lastForceCloseTs: 0
     };
 
 
@@ -82,6 +103,187 @@
 
     function normalizeText(text) {
         return String(text || '').replace(/\s+/g, '').trim();
+    }
+
+
+    function themeColorVarFromKey(key) {
+        return '--tmk-c-' + String(key).replace(/([A-Z])/g, '-$1').toLowerCase();
+    }
+
+
+    function pickColor(c, keys, fallback) {
+        for (let i = 0; i < keys.length; i += 1) {
+            const k = keys[i];
+            if (c[k] !== undefined && c[k] !== null && String(c[k]) !== '') return c[k];
+        }
+        return fallback;
+    }
+
+
+    function expandThemeColors(raw) {
+        const base = THEME2_FALLBACK_COLORS;
+        const c = Object.assign({}, base, raw || {});
+        const majorFocus = pickColor(c, ['majorFocus'], base.majorFocus);
+        const minorFocus = pickColor(c, ['minorFocus'], base.minorFocus);
+        const minorFont = pickColor(c, ['minorFont'], base.minorFont);
+        const majorFont = pickColor(c, ['majorFont'], base.majorFont);
+        const majorButton = pickColor(c, ['majorButton'], base.majorButton);
+        const inputBg = pickColor(c, ['inputBackground'], base.inputBackground);
+        const minorButton = pickColor(c, ['minorButton'], base.minorButton);
+        const overlayOpacityRaw = pickColor(c, ['overlayBackdrop'], '0.4');
+        let overlayOpacity = parseFloat(String(overlayOpacityRaw).replace(/[^\d.]/g, ''));
+        if (!Number.isFinite(overlayOpacity)) overlayOpacity = 0.4;
+        overlayOpacity = Math.max(0, Math.min(1, overlayOpacity));
+        const overlayPercent = Math.max(0, Math.min(100, Math.round(overlayOpacity * 100)));
+        return {
+            overlayBackdrop: 'color-mix(in srgb, ' + minorButton + ' ' + overlayPercent + '%, transparent)',
+            majorFocus: majorFocus,
+            majorFont: majorFont,
+            minorFont: minorFont,
+            minorFocus: minorFocus,
+            majorButton: majorButton,
+            inputBackground: inputBg,
+            minorButton: minorButton,
+            lv1Bg: pickColor(c, ['lv1Bg'], majorFocus),
+            kvToolFg: pickColor(c, ['kvToolFg'], majorFocus),
+            lv2Bg: pickColor(c, ['lv2Bg'], minorFocus),
+            fabHoverBorder: pickColor(c, ['fabHoverBorder'], minorFocus),
+            searchInputBorder: pickColor(c, ['searchInputBorder'], minorFocus),
+            kvToolBorder: pickColor(c, ['kvToolBorder'], minorFocus),
+            tileHoverBorder: pickColor(c, ['tileHoverBorder'], minorFocus),
+            h1: pickColor(c, ['h1'], minorFont),
+            lv1Fg: pickColor(c, ['lv1Fg'], minorFont),
+            lv2Fg: pickColor(c, ['lv2Fg'], minorFont),
+            lv4Fg: pickColor(c, ['lv4Fg'], majorFont),
+            lv3Fg: pickColor(c, ['lv3Fg'], majorFont),
+            fabFg: pickColor(c, ['fabFg'], majorFont),
+            searchInputFg: pickColor(c, ['searchInputFg'], majorFont),
+            lv5Fg: pickColor(c, ['lv5Fg'], majorFont),
+            searchPlaceholder: pickColor(c, ['searchPlaceholder'], majorFont),
+            fabBg: pickColor(c, ['fabBg'], majorButton),
+            searchBg: pickColor(c, ['searchBg'], majorButton),
+            lv5Bg: pickColor(c, ['lv5Bg'], majorButton),
+            searchActiveBg: pickColor(c, ['searchActiveBg'], majorButton),
+            lv4Bg: pickColor(c, ['lv4Bg'], minorButton),
+            searchInputBg: pickColor(c, ['searchInputBg'], inputBg),
+            fabBorder: pickColor(c, ['fabBorder'], minorFocus),
+            searchBorder: pickColor(c, ['searchBorder'], minorFocus),
+            searchActiveBorder: minorFocus,
+            lv3Bg: pickColor(c, ['lv3Bg'], majorButton),
+            searchLoadingBg: pickColor(c, ['searchLoadingBg'], majorButton),
+            searchLoadingFg: pickColor(c, ['searchLoadingFg'], majorFont)
+        };
+    }
+
+
+    function applyThemeVars(colors) {
+        if (!document.documentElement || !colors) return;
+        Object.keys(colors).forEach((k) => {
+            const v = colors[k];
+            if (v === undefined || v === null || String(v) === '') return;
+            document.documentElement.style.setProperty(themeColorVarFromKey(k), String(v));
+        });
+    }
+
+
+    function ensureTheme2Applied() {
+        let uiColors = null;
+        try {
+            if (window.top && window.top.__tmkTheme && window.top.__tmkTheme.colors) {
+                uiColors = window.top.__tmkTheme.colors;
+            }
+        } catch (e) {}
+        if (!uiColors) {
+            try {
+                if (window.__tmkTheme && window.__tmkTheme.colors) {
+                    uiColors = window.__tmkTheme.colors;
+                }
+            } catch (e) {}
+        }
+        applyThemeVars(expandThemeColors(uiColors || THEME2_FALLBACK_COLORS));
+    }
+
+
+    function normalizeZLayers(raw) {
+        const out = Object.assign({}, DEFAULT_Z_LAYERS);
+        if (!raw || typeof raw !== 'object') return out;
+        Object.keys(DEFAULT_Z_LAYERS).forEach((k) => {
+            const v = Number(raw[k]);
+            if (Number.isFinite(v)) out[k] = v;
+        });
+        return out;
+    }
+
+
+    function getSharedZLayers() {
+        try {
+            if (window.top && window.top.__tmkZLayers) return normalizeZLayers(window.top.__tmkZLayers);
+        } catch (e) {}
+        if (window.__tmkZLayers) return normalizeZLayers(window.__tmkZLayers);
+        return normalizeZLayers(null);
+    }
+
+
+    function getScopedZLayers() {
+        const ui = getSharedZLayers();
+        const cap = {
+            backgroundCover: 80,
+            mainFunctionView: 300,
+            functionButton: 320,
+            searchControls: 330,
+            floatingButton: 340
+        };
+        const out = {
+            basePage: 0,
+            backgroundCover: Math.min(Number(ui.backgroundCover) || 100, cap.backgroundCover),
+            mainFunctionView: Math.min(Number(ui.mainFunctionView) || 500, cap.mainFunctionView),
+            functionButton: Math.min(Number(ui.functionButton) || 600, cap.functionButton),
+            searchControls: Math.min(Number(ui.searchControls) || 900, cap.searchControls),
+            floatingButton: Math.min(Number(ui.floatingButton) || 1000, cap.floatingButton)
+        };
+        if (out.mainFunctionView <= out.backgroundCover) out.mainFunctionView = out.backgroundCover + 1;
+        if (out.functionButton <= out.mainFunctionView) out.functionButton = out.mainFunctionView + 1;
+        if (out.searchControls <= out.functionButton) out.searchControls = out.functionButton + 1;
+        if (out.floatingButton <= out.searchControls) out.floatingButton = out.searchControls + 1;
+        return out;
+    }
+
+
+    function readForceCloseViewsTs() {
+        let ts = 0;
+        try {
+            if (window.top && Number.isFinite(Number(window.top.__tmkForceCloseViewsTs))) {
+                ts = Number(window.top.__tmkForceCloseViewsTs);
+            }
+        } catch (e) {}
+        try {
+            const raw = window.sessionStorage.getItem(FORCE_CLOSE_VIEWS_KEY);
+            const parsed = Number(raw);
+            if (Number.isFinite(parsed)) ts = Math.max(ts, parsed);
+        } catch (e) {}
+        return ts;
+    }
+
+
+    function shouldCloseForUiOverlay() {
+        try {
+            if (window.top && window.top.__tmkUiOverlayOpen === true) return true;
+        } catch (e) {}
+        return window.__tmkUiOverlayOpen === true;
+    }
+
+
+    function consumeModernLostQueryLaunchMark() {
+        try {
+            const raw = window.sessionStorage.getItem(MODERN_LOST_QUERY_KEY);
+            const ts = Number(raw);
+            if (!Number.isFinite(ts)) return false;
+            if (Date.now() - ts > 5 * 60 * 1000) return false;
+            window.sessionStorage.removeItem(MODERN_LOST_QUERY_KEY);
+            return true;
+        } catch (e) {
+            return false;
+        }
     }
 
 
@@ -163,13 +365,14 @@
 
     function injectSharedLqv2Style() {
         if (!document.head || document.getElementById(STYLE_ID)) return;
+        const z = getScopedZLayers();
         const style = document.createElement('style');
         style.id = STYLE_ID;
         style.textContent = `
             html,
             body {
                 background: transparent !important;
-                color: #111111 !important;
+                color: var(--tmk-c-major-font) !important;
                 font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif !important;
             }
             .l_mainContentL1,
@@ -181,9 +384,9 @@
             #${GLASS_ID} {
                 position: fixed;
                 inset: 0;
-                z-index: 2147483644;
+                z-index: ${z.backgroundCover};
                 display: none;
-                background: rgba(223, 230, 238, 0.4);
+                background: var(--tmk-c-overlay-backdrop);
                 backdrop-filter: blur(10px);
                 -webkit-backdrop-filter: blur(10px);
             }
@@ -191,14 +394,14 @@
                 position: fixed;
                 top: 10px;
                 right: 12px;
-                z-index: 2147483647;
+                z-index: ${z.floatingButton};
                 display: inline-flex;
                 align-items: center;
                 gap: 6px;
                 padding: 5px;
                 border-radius: 999px;
-                background: rgba(255, 255, 255, 0.75);
-                border: 1px solid #9db8d2;
+                background: var(--tmk-c-search-bg);
+                border: 1px solid var(--tmk-c-search-input-border);
                 box-shadow: 0 6px 16px rgba(23, 52, 86, 0.16);
                 backdrop-filter: blur(8px);
                 -webkit-backdrop-filter: blur(8px);
@@ -207,31 +410,32 @@
                 min-height: 30px;
                 padding: 0 12px;
                 border-radius: 999px;
-                border: 1px solid #8fb1cc;
-                background: #ffffff;
-                color: #1a3a5a;
+                border: 1px solid var(--tmk-c-search-input-border);
+                background: var(--tmk-c-search-bg);
+                color: var(--tmk-c-major-font);
                 font-size: 14px;
                 font-weight: 600;
                 cursor: pointer;
             }
             .tmk-lqv2-btn.tmk-active {
-                background: #3f89d0;
-                border-color: #3f89d0;
-                color: #ffffff;
+                background: var(--tmk-c-major-focus);
+                border-color: var(--tmk-c-major-focus);
+                color: var(--tmk-c-lv1-fg);
             }
             #${WRAP_ID} {
-                width: min(680px, calc(100vw - var(--tmk-left-gap, 16px) - 24px));
+                width: calc(100vw - var(--tmk-left-gap, 16px) - 24px);
+                max-width: calc(100vw - var(--tmk-left-gap, 16px) - 24px);
                 margin: 0;
-                padding: 4px 4px 16px 4px;
+                padding: 10px 12px 14px 12px;
                 box-sizing: border-box;
                 position: fixed;
                 top: 72px;
                 left: var(--tmk-left-gap, 16px);
-                z-index: 2147483646;
+                z-index: ${z.mainFunctionView};
                 max-height: calc(100vh - 92px);
                 overflow: auto;
-                background: rgba(223, 230, 238, 0.7);
-                border: 1px solid rgba(151, 177, 203, 0.45);
+                background: color-mix(in srgb, var(--tmk-c-major-button) 40%, transparent);
+                border: 1px solid var(--tmk-c-search-input-border);
                 border-radius: 12px;
                 backdrop-filter: blur(10px);
                 -webkit-backdrop-filter: blur(10px);
@@ -239,14 +443,14 @@
             }
             #${WRAP_ID} h2 {
                 margin: 0 0 18px 0;
-                color: #111111;
+                color: var(--tmk-c-major-font);
                 font-size: 34px;
                 font-weight: 700;
                 line-height: 1.15;
             }
             #${WRAP_ID} h4 {
                 margin: 18px 0 8px 0;
-                color: #111111;
+                color: var(--tmk-c-major-font);
                 font-size: 18px;
                 font-weight: 600;
                 line-height: 1.3;
@@ -255,17 +459,17 @@
                 width: 100%;
                 min-height: 42px;
                 border: 0;
-                border-bottom: 2px solid #7ea2c1;
+                border-bottom: 2px solid var(--tmk-c-search-input-border);
                 border-radius: 0;
                 background: transparent;
-                color: #111111;
+                color: var(--tmk-c-major-font);
                 font-size: 20px;
                 padding: 6px 2px;
                 box-sizing: border-box;
                 outline: none;
             }
             #${WRAP_ID} .tmk-input:focus {
-                border-bottom-color: #3f89d0;
+                border-bottom-color: var(--tmk-c-major-focus);
             }
             #${WRAP_ID} .tmk-radio-row {
                 display: flex;
@@ -274,7 +478,7 @@
                 margin: 8px 0 4px 0;
             }
             #${WRAP_ID} .tmk-radio-row label {
-                color: #111111;
+                color: var(--tmk-c-major-font);
                 font-size: 17px;
                 cursor: pointer;
             }
@@ -282,10 +486,10 @@
                 margin-top: 22px;
                 width: 100%;
                 min-height: 46px;
-                border: 1px solid #78abd6;
+                border: 1px solid var(--tmk-c-major-focus);
                 border-radius: 10px;
-                background: #8cc7e8;
-                color: #111111;
+                background: var(--tmk-c-major-focus);
+                color: var(--tmk-c-lv1-fg);
                 font-size: 20px;
                 font-weight: 600;
                 cursor: pointer;
@@ -298,6 +502,7 @@
     function injectStep2ShellStyle(metrics) {
         if (!document.head) return;
         const m = metrics || getUiMetrics();
+        const z = getScopedZLayers();
         if (document.documentElement) {
             document.documentElement.style.setProperty('--tmk-big-tile', `${m.bigTile}px`);
         }
@@ -355,14 +560,14 @@
                 position: fixed;
                 top: 72px;
                 left: var(--tmk-left-gap, 16px);
-                z-index: 2147483646;
+                z-index: ${z.mainFunctionView};
                 width: calc(100vw - var(--tmk-left-gap, 16px) - 24px);
                 max-width: calc(100vw - var(--tmk-left-gap, 16px) - 24px);
                 max-height: calc(100vh - 92px);
                 overflow: auto;
                 padding: ${m.gap}px;
                 border-radius: 12px;
-                background: rgba(223, 230, 238, 0.7);
+                background: color-mix(in srgb, var(--tmk-c-major-button) 40%, transparent);
                 border: 1px solid rgba(151, 177, 203, 0.45);
                 backdrop-filter: blur(10px);
                 -webkit-backdrop-filter: blur(10px);
@@ -626,6 +831,15 @@
     }
 
 
+    function enforceUiGlobalControl() {
+        const forceTs = readForceCloseViewsTs();
+        if (forceTs > state.lastForceCloseTs) {
+            state.lastForceCloseTs = forceTs;
+            if (state.mode === 'modern') setMode('legacy');
+        }
+    }
+
+
     function setMode(mode) {
         state.mode = mode === 'legacy' ? 'legacy' : 'modern';
         if (state.page === 'menu') {
@@ -864,6 +1078,7 @@
     function bootstrapMenu() {
         if (!findLegacyControls()) return;
         state.page = 'menu';
+        ensureTheme2Applied();
         console.info('[LQ unified] menu legacy controls found', {
             receiveCompany: state.receiveCompanyInputs.length,
             bagnum: state.bagnumInputs.length,
@@ -877,7 +1092,13 @@
         renderToolbar();
         syncFromLegacy();
         bindModernEvents();
+        consumeModernLostQueryLaunchMark();
+        state.lastForceCloseTs = readForceCloseViewsTs();
         setMode('modern');
+        window.setInterval(function() {
+            enforceUiGlobalControl();
+            ensureTheme2Applied();
+        }, 500);
         window.addEventListener('resize', applyLeftGap);
     }
 
@@ -1413,6 +1634,7 @@
         const parent = first.parentNode;
         if (!parent) return false;
         state.page = 'step2';
+        ensureTheme2Applied();
         applyLeftGap();
         injectSharedLqv2Style();
         injectStep2ShellStyle(getUiMetrics());
@@ -1459,7 +1681,13 @@
             blocks[i].setAttribute('data-tmk-idx', String(i));
         }
         state.shell = shell;
+        consumeModernLostQueryLaunchMark();
+        state.lastForceCloseTs = readForceCloseViewsTs();
         setMode('modern');
+        window.setInterval(function() {
+            enforceUiGlobalControl();
+            ensureTheme2Applied();
+        }, 500);
         window.addEventListener('resize', function() {
             applyLeftGap();
             injectStep2ShellStyle(getUiMetrics());
