@@ -835,7 +835,6 @@
         const forceTs = readForceCloseViewsTs();
         if (forceTs > state.lastForceCloseTs) {
             state.lastForceCloseTs = forceTs;
-            if (state.mode === 'modern') setMode('legacy');
         }
     }
 

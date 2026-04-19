@@ -16,20 +16,20 @@
     'use strict';
     // 与 BCheckWeb 少收表_v1.js 互斥：请勿同时启用两套少收表 UI 脚本。
     const PAGE_RE = /(?:newNull)?BaggageLost_newBaggageLostAction\.action/i;
-    const INIT_FLAG = '__tmkLostFormV2Inited';
-    const STYLE_ID = 'tmk-lostform-v2-style';
-    const GLASS_ID = 'tmk-lostform-v2-glass';
-    const TOOLBAR_ID = 'tmk-lostform-v2-toolbar';
-    const SHELL_ID = 'tmk-lostform-v2-shell';
-    const STAGE_ID = 'tmk-lostform-v2-stage';
-    const STEPPER_BAR_ID = 'tmk-lostform-v2-stepper-bar';
-    const QUICK_FILL_FAB_ID = 'tmk-lostform-v2-qf-fab';
-    const DETAIL_QUICK_FILL_FAB_ID = 'tmk-lostform-v2-qf-fab-detail';
-    const PREVIEW_BTN_ID = 'tmk-lostform-v2-qf-preview';
-    const PREVIEW_SLOT_ID = 'tmk-lostform-v2-qf-preview-slot';
-    const ACTION_BAR_ID = 'tmk-lostform-v2-qf-action-bar';
-    const MODE_CLASS = 'tmk-lostform-v2-modern';
-    const MIRROR_PAGE_CLASS = 'tmk-lostform-v2-mirror-page';
+    const INIT_FLAG = '__tmkPnrInit';
+    const STYLE_ID = 'tmk-pnr-style';
+    const GLASS_ID = 'tmk-pnr-glass';
+    const TOOLBAR_ID = 'tmk-pnr-toolbar';
+    const SHELL_ID = 'tmk-pnr-shell';
+    const STAGE_ID = 'tmk-pnr-stage';
+    const STEPPER_BAR_ID = 'tmk-pnr-stepper-bar';
+    const QUICK_FILL_FAB_ID = 'tmk-pnr-qf-fab';
+    const DETAIL_QUICK_FILL_FAB_ID = 'tmk-pnr-qf-fab-detail';
+    const PREVIEW_BTN_ID = 'tmk-pnr-qf-preview';
+    const PREVIEW_SLOT_ID = 'tmk-pnr-qf-preview-slot';
+    const ACTION_BAR_ID = 'tmk-pnr-qf-action-bar';
+    const MODE_CLASS = 'tmk-pnr-modern';
+    const MIRROR_PAGE_CLASS = 'tmk-pnr-mirror-page';
     const FORCE_CLOSE_VIEWS_KEY = 'tmk-force-close-views-ts';
     const DEFAULT_CP = '3102151188';
     const CT_PATTERN = /^[A-Z]{2}[0-9]{2}[A-Z]{3}$/;
@@ -42,17 +42,15 @@
         floatingButton: 1000
     });
     const state = {
-        mode: 'modern',
+        uiVisible: true,
         mainStep: 1,
         subStep36: 2,
         glass: null,
         shell: null,
         capsLockActive: false,
         observer: null,
-        content1FsBound: false,
         quickReady: false,
         detailSyncTimer: null,
-        stageInsertBeforeRef: null,
         mirrorPageRefs: {},
         mirrorControlPairs: {},
         lastForceCloseTs: 0
@@ -122,14 +120,6 @@
             if (Number.isFinite(parsed)) ts = Math.max(ts, parsed);
         } catch (e) {}
         return ts;
-    }
-
-
-    function shouldCloseForUiOverlay() {
-        try {
-            if (window.top && window.top.__tmkUiOverlayOpen === true) return true;
-        } catch (e) {}
-        return window.__tmkUiOverlayOpen === true;
     }
 
 
@@ -457,16 +447,17 @@
     }
 
 
+    // 功能：绑定镜像详细页折叠面板交互。
     function bindMirrorDetailPanels(mirror) {
         if (!mirror) return;
-        mirror.querySelectorAll('.tmk-lostform-v2-fs-toggle').forEach(function(toggle) {
+        mirror.querySelectorAll('.tmk-pnr-fs-toggle').forEach(function(toggle) {
             if (toggle.getAttribute('data-tmk-mirror-bound') === '1') return;
             toggle.setAttribute('data-tmk-mirror-bound', '1');
             toggle.addEventListener('click', function() {
-                const panel = toggle.closest('.tmk-lostform-v2-fs-panel');
+                const panel = toggle.closest('.tmk-pnr-fs-panel');
                 if (!panel) return;
                 const wasCollapsed = panel.classList.contains('is-collapsed');
-                mirror.querySelectorAll('.tmk-lostform-v2-fs-panel').forEach(function(p) {
+                mirror.querySelectorAll('.tmk-pnr-fs-panel').forEach(function(p) {
                     p.classList.add('is-collapsed');
                 });
                 if (wasCollapsed) panel.classList.remove('is-collapsed');
@@ -479,10 +470,6 @@
         const stage = document.getElementById(STAGE_ID);
         const source = document.getElementById('content_' + pageNo);
         if (!stage || !source) return;
-        if (Number(pageNo) === 1) {
-            setupCollapsibleFieldsetsV2();
-            markContent1HeaderRowHidden();
-        }
         let mirror = state.mirrorPageRefs[pageNo];
         if (!mirror || !mirror.parentNode) {
             mirror = document.createElement('div');
@@ -494,6 +481,7 @@
         mirror.innerHTML = '';
         const clone = source.cloneNode(true);
         removeIdsFromCloneTree(clone);
+        if (Number(pageNo) === 1) decorateMirrorDetailPage(clone);
         mirror.appendChild(clone);
         if (Number(pageNo) === 1) bindMirrorDetailPanels(mirror);
         bindMirrorControls(pageNo, source, mirror);
@@ -501,26 +489,17 @@
     }
 
 
-    // stage 仅承载镜像页面，不再搬运原始 content_1~7
-    function ensureStage() {
+    // 功能：创建并挂载镜像舞台（只渲染覆盖层，不改原网页）。
+    function mountStage() {
         if (document.getElementById(STAGE_ID)) return;
         if (!document.body) return;
         const stage = document.createElement('div');
         stage.id = STAGE_ID;
-        stage.className = 'tmk-lostform-v2-stage';
+        stage.className = 'tmk-pnr-stage';
         document.body.appendChild(stage);
         [1, 2, 3, 4, 5, 6, 7].forEach(function(pageNo) {
             renderMirrorPage(pageNo);
         });
-    }
-
-
-    function restoreStageContentsToForm() {
-        const stage = document.getElementById(STAGE_ID);
-        if (!stage) return;
-        stage.remove();
-        state.mirrorPageRefs = {};
-        state.mirrorControlPairs = {};
     }
 
 
@@ -1062,15 +1041,16 @@
     }
 
 
+    // 功能：读取快捷页输入框引用。
     function getQuickInputs() {
         return {
-            nmgn: document.getElementById('tmk-lostform-v2-qf-nmgn'),
-            tn: document.getElementById('tmk-lostform-v2-qf-tn'),
-            nw: document.getElementById('tmk-lostform-v2-qf-nw'),
-            ct: document.getElementById('tmk-lostform-v2-qf-ct'),
-            pa: document.getElementById('tmk-lostform-v2-qf-pa'),
-            family: document.getElementById('tmk-lostform-v2-qf-family'),
-            cp: document.getElementById('tmk-lostform-v2-qf-cp')
+            nmgn: document.getElementById('tmk-pnr-qf-nmgn'),
+            tn: document.getElementById('tmk-pnr-qf-tn'),
+            nw: document.getElementById('tmk-pnr-qf-nw'),
+            ct: document.getElementById('tmk-pnr-qf-ct'),
+            pa: document.getElementById('tmk-pnr-qf-pa'),
+            family: document.getElementById('tmk-pnr-qf-family'),
+            cp: document.getElementById('tmk-pnr-qf-cp')
         };
     }
 
@@ -1259,7 +1239,7 @@
 
 
     function syncQuickFromDetail() {
-        if (!state.quickReady || state.mode !== 'modern' || state.mainStep !== 1) return;
+        if (!state.quickReady || !state.uiVisible || state.mainStep !== 1) return;
         const refs = resolveFieldRefs(document);
         const qi = getQuickInputs();
         const nmgnFromRefs = buildNmGnDisplayFromRefs(refs);
@@ -1278,8 +1258,8 @@
         if (state.quickReady) return;
         if (!isQuickDetailReady()) return;
         state.quickReady = true;
-        const quick = document.getElementById('tmk-lostform-v2-quick');
-        if (quick) quick.classList.remove('tmk-lostform-v2-quick--pending');
+        const quick = document.getElementById('tmk-pnr-quick');
+        if (quick) quick.classList.remove('tmk-pnr-quick--pending');
         syncQuickFromDetail();
         syncFabLabelFromDom();
         applyNormalizedQuickLabels();
@@ -1292,53 +1272,33 @@
     function startDetailSync() {
         if (state.detailSyncTimer) return;
         state.detailSyncTimer = window.setInterval(function() {
-            if (state.mode !== 'modern' || state.mainStep !== 1) return;
+            if (!state.uiVisible || state.mainStep !== 1) return;
             syncQuickFromDetail();
         }, 1200);
     }
 
 
-    // 毛玻璃层在底层；壳与当前可见的 #content_* 用更高 z-index 叠在玻璃之上，避免表单被 backdrop-filter 糊住。
+    // 功能：注入覆盖层专用样式（不改动原网页元素）。
     function injectStyles() {
         if (document.getElementById(STYLE_ID)) return;
         const z = getV2ZLayers();
         const style = document.createElement('style');
         style.id = STYLE_ID;
         style.textContent = [
-            'html.' + MODE_CLASS + ',',
-            'html.' + MODE_CLASS + ' body {',
-            '  background: transparent !important;',
-            '  color: var(--tmk-c-major-font) !important;',
-            '  font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif !important;',
-            '}',
-            'html.' + MODE_CLASS + ' .l_mainContentL1,',
-            'html.' + MODE_CLASS + ' #content_1,',
-            'html.' + MODE_CLASS + ' .l_mainContent,',
-            'html.' + MODE_CLASS + ' .ui-page,',
-            'html.' + MODE_CLASS + ' .ui-content {',
-            '  background: transparent !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #l_body {',
-            '  padding-top: var(--tmk-lostform-v2-body-pad, 120px);',
-            '  padding-bottom: var(--tmk-lostform-v2-body-pad-bottom, 8px);',
-            '  box-sizing: border-box;',
-            '}',
-            'html.' + MODE_CLASS + ' .l_header { display: none !important; }',
             'html.' + MODE_CLASS + ' #' + GLASS_ID + ' { display: block !important; }',
             'html.' + MODE_CLASS + ' #' + SHELL_ID + ' { display: none !important; }',
-            'html.' + MODE_CLASS + ' #' + SHELL_ID + '.tmk-lostform-v2-shell--quick { display: block !important; }',
+            'html.' + MODE_CLASS + ' #' + SHELL_ID + '.tmk-pnr-shell--quick { display: block !important; }',
             'html.' + MODE_CLASS + ' #' + STAGE_ID + ' { display: none !important; }',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + '.tmk-lostform-v2-stage--on { display: block !important; }',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + '.tmk-pnr-stage--on { display: block !important; }',
             'html.' + MODE_CLASS + ' #' + STEPPER_BAR_ID + ' { display: block !important; }',
-            'html.' + MODE_CLASS + ' #float-action-box { display: none !important; }',
             '#' + GLASS_ID + ' {',
             '  position: fixed;',
             '  inset: 0;',
             '  z-index: ' + z.backgroundCover + ';',
             '  display: none;',
-            '  background: color-mix(in srgb, var(--tmk-c-minor-button) 55%, transparent);',
-            '  backdrop-filter: blur(10px);',
-            '  -webkit-backdrop-filter: blur(10px);',
+            '  background: color-mix(in srgb, var(--tmk-c-minor-button) 40%, transparent);',
+            '  backdrop-filter: blur(12px);',
+            '  -webkit-backdrop-filter: blur(12px);',
             '  pointer-events: none;',
             '}',
             '#' + TOOLBAR_ID + ' {',
@@ -1357,7 +1317,7 @@
             '  backdrop-filter: blur(8px);',
             '  -webkit-backdrop-filter: blur(8px);',
             '}',
-            '.tmk-lostform-v2-tb-btn {',
+            '.tmk-pnr-tb-btn {',
             '  min-height: 32px;',
             '  padding: 0 14px;',
             '  border-radius: 999px;',
@@ -1370,10 +1330,10 @@
             '  font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif;',
             '  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;',
             '}',
-            '.tmk-lostform-v2-tb-btn:hover {',
+            '.tmk-pnr-tb-btn:hover {',
             '  border-color: var(--tmk-c-search-active-border, var(--tmk-c-search-input-border));',
             '}',
-            '.tmk-lostform-v2-tb-btn.tmk-active {',
+            '.tmk-pnr-tb-btn.tmk-active {',
             '  background: var(--tmk-c-major-focus);',
             '  border-color: var(--tmk-c-major-focus);',
             '  color: var(--tmk-c-lv1-fg);',
@@ -1382,7 +1342,7 @@
             '  display: none;',
             '  position: fixed;',
             '  left: var(--tmk-left-gap, 16px);',
-            '  right: var(--tmk-lostform-v2-shell-right, 24px);',
+            '  right: var(--tmk-pnr-shell-right, 24px);',
             '  top: 72px;',
             '  bottom: auto;',
             '  z-index: ' + z.floatingButton + ';',
@@ -1393,7 +1353,7 @@
             '  box-shadow: none;',
             '  pointer-events: auto;',
             '}',
-            '#' + STEPPER_BAR_ID + ' .tmk-lostform-v2-stepper {',
+            '#' + STEPPER_BAR_ID + ' .tmk-pnr-stepper {',
             '  margin-top: 0;',
             '  margin-bottom: 0;',
             '}',
@@ -1401,54 +1361,54 @@
             '#' + STAGE_ID + ' {',
             '  display: none;',
             '  position: fixed;',
-            '  top: calc(72px + var(--tmk-lostform-v2-stepper-h, 56px));',
+            '  top: calc(72px + var(--tmk-pnr-stepper-h, 56px));',
             '  bottom: 12px;',
             '  left: var(--tmk-left-gap, 16px);',
             '  z-index: ' + z.mainFunctionView + ';',
-            '  width: calc(100vw - var(--tmk-left-gap, 16px) - var(--tmk-lostform-v2-shell-right, 24px));',
-            '  max-width: calc(100vw - var(--tmk-left-gap, 16px) - var(--tmk-lostform-v2-shell-right, 24px));',
+            '  width: calc(100vw - var(--tmk-left-gap, 16px) - var(--tmk-pnr-shell-right, 24px));',
+            '  max-width: calc(100vw - var(--tmk-left-gap, 16px) - var(--tmk-pnr-shell-right, 24px));',
             '  max-height: none;',
             '  overflow-x: hidden;',
             '  overflow-y: auto;',
             '  box-sizing: border-box;',
-            '  padding: var(--tmk-lostform-v2-shell-pad-top, 10px) var(--tmk-lostform-v2-shell-pad-x, 12px) calc(var(--tmk-lostform-v2-shell-pad-bot, 14px) + var(--tmk-medium, 92px) * 0.382 + 18px) var(--tmk-lostform-v2-shell-pad-x, 12px);',
-            '  background: color-mix(in srgb, var(--tmk-c-major-button) 40%, transparent);',
+            '  padding: var(--tmk-pnr-shell-pad-top, 10px) var(--tmk-pnr-shell-pad-x, 12px) calc(var(--tmk-pnr-shell-pad-bot, 14px) + var(--tmk-medium, 92px) * 0.382 + 18px) var(--tmk-pnr-shell-pad-x, 12px);',
+            '  background: color-mix(in srgb, var(--tmk-c-major-button) 12%, transparent);',
             '  border: 1px solid var(--tmk-c-search-input-border);',
             '  border-radius: 12px;',
-            '  backdrop-filter: blur(10px);',
-            '  -webkit-backdrop-filter: blur(10px);',
+            '  backdrop-filter: none;',
+            '  -webkit-backdrop-filter: none;',
             '  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);',
             '  pointer-events: auto;',
             '  color: var(--tmk-c-major-font);',
             '}',
-            '.tmk-lostform-v2-stepper {',
+            '.tmk-pnr-stepper {',
             '  display: flex;',
             '  align-items: center;',
             '  flex-wrap: nowrap;',
             '  gap: 0;',
             '  margin-bottom: 10px;',
             '}',
-            '.tmk-lostform-v2-step-node {',
+            '.tmk-pnr-step-node {',
             '  position: relative;',
             '  display: flex;',
             '  align-items: center;',
             '  flex: 0 0 auto;',
             '  min-width: 0;',
             '}',
-            '.tmk-lostform-v2-step-node input[type="radio"] {',
+            '.tmk-pnr-step-node input[type="radio"] {',
             '  position: absolute;',
             '  opacity: 0;',
             '  width: 0;',
             '  height: 0;',
             '  pointer-events: none;',
             '}',
-            '.tmk-lostform-v2-step-visual {',
+            '.tmk-pnr-step-visual {',
             '  display: flex;',
             '  align-items: center;',
             '  min-width: 0;',
             '  cursor: pointer;',
             '}',
-            '.tmk-lostform-v2-step-ring {',
+            '.tmk-pnr-step-ring {',
             '  width: 18px;',
             '  height: 18px;',
             '  border-radius: 0;',
@@ -1461,7 +1421,7 @@
             '  justify-content: center;',
             '  position: relative;',
             '}',
-            '.tmk-lostform-v2-step-node input:checked + label .tmk-lostform-v2-step-ring::after {',
+            '.tmk-pnr-step-node input:checked + label .tmk-pnr-step-ring::after {',
             '  content: "";',
             '  width: 10px;',
             '  height: 10px;',
@@ -1469,7 +1429,7 @@
             '  background: var(--tmk-c-major-focus);',
             '  display: block;',
             '}',
-            '.tmk-lostform-v2-step-connector {',
+            '.tmk-pnr-step-connector {',
             '  flex: 1 1 12px;',
             '  height: 2px;',
             '  background: var(--tmk-c-major-focus);',
@@ -1478,7 +1438,7 @@
             '  opacity: 0.85;',
             '  align-self: center;',
             '}',
-            '.tmk-lostform-v2-step-text {',
+            '.tmk-pnr-step-text {',
             '  margin-left: 6px;',
             '  font-size: 13px;',
             '  color: var(--tmk-c-major-font);',
@@ -1486,238 +1446,21 @@
             '  overflow: hidden;',
             '  text-overflow: ellipsis;',
             '}',
-            '.tmk-lostform-v2-step-node input:focus + label .tmk-lostform-v2-step-ring {',
+            '.tmk-pnr-step-node input:focus + label .tmk-pnr-step-ring {',
             '  outline: 2px solid var(--tmk-c-major-focus);',
             '  outline-offset: 2px;',
             '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-panel {',
-            '  margin: 12px var(--tmk-lostform-v2-c1-panel-mx, 15px);',
-            '  width: calc(100% - 2 * var(--tmk-lostform-v2-c1-panel-mx, 15px));',
-            '  max-width: none;',
-            '  box-sizing: border-box;',
-            '  border: 1px solid var(--tmk-c-search-input-border);',
-            '  border-radius: 10px;',
-            '  overflow: hidden;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-toggle {',
-            '  display: block;',
-            '  width: 100%;',
-            '  min-height: 66px;',
-            '  text-align: left;',
-            '  border: 0;',
-            '  border-bottom: 2px solid var(--tmk-c-search-input-border);',
-            '  background: var(--tmk-c-major-button);',
-            '  font-size: 20px;',
-            '  font-weight: 600;',
-            '  padding: 10px 2px;',
-            '  cursor: pointer;',
-            '  box-sizing: border-box;',
-            '  color: var(--tmk-c-major-font);',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body {',
-            '  padding: 12px 0;',
-            '  border-top: 1px solid var(--tmk-c-search-input-border);',
-            '  overflow-x: hidden;',
-            '  max-width: 100%;',
-            '  min-width: 0;',
-            '  box-sizing: border-box;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1:not(.tmk-lostform-v2-pane-hidden) {',
-            '  overflow-x: hidden;',
-            '  max-width: 100%;',
-            '  min-width: 0;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-panel.is-collapsed .tmk-lostform-v2-fs-body {',
-            '  display: none !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-panel .tmk-lostform-v2-fs-body > fieldset {',
-            '  margin: 0 !important;',
-            '  border: none !important;',
-            '  padding: 0 !important;',
-            '  min-width: 0 !important;',
-            '  max-width: 100% !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-panel .tmk-lostform-v2-fs-body > fieldset > legend {',
-            '  display: none !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-c1-hide {',
-            '  display: none !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .ui-grid-b.l_low {',
-            '  display: none !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body .ui-grid-c.l_row,',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body .ui-grid-b.l_row,',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body .ui-grid-d.l_row {',
-            '  display: grid !important;',
-            '  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;',
-            '  align-items: start !important;',
-            '  gap: var(--tmk-gap, 10px) !important;',
-            '  width: 100% !important;',
-            '  max-width: 100% !important;',
-            '  box-sizing: border-box !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body .ui-grid-c.l_row > [class*="ui-block-"],',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body .ui-grid-b.l_row > [class*="ui-block-"],',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body .ui-grid-d.l_row > [class*="ui-block-"] {',
-            '  width: 100% !important;',
-            '  min-width: 0 !important;',
-            '  max-width: 100% !important;',
-            '  float: none !important;',
-            '  box-sizing: border-box !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body [class*="ui-block-"] {',
-            '  float: none !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body .ui-grid-a {',
-            '  display: grid !important;',
-            '  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;',
-            '  align-items: start !important;',
-            '  column-gap: 0 !important;',
-            '  row-gap: 8px !important;',
-            '  width: min(100%, 720px) !important;',
-            '  max-width: 720px !important;',
-            '  box-sizing: border-box !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body .ui-grid-a > [class*="ui-block-"] {',
-            '  width: 100% !important;',
-            '  max-width: 360px !important;',
-            '  min-width: 0 !important;',
-            '  box-sizing: border-box !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body .l_right {',
-            '  text-align: left !important;',
-            '  font-size: 18px !important;',
-            '  color: var(--tmk-c-major-font) !important;',
-            '  line-height: 1.35 !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body .l_right .l_notNull {',
-            '  font-size: 18px !important;',
-            '  color: var(--tmk-c-major-focus) !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body .l_wtCode {',
-            '  font-size: 15px !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body .l_left {',
-            '  width: 100% !important;',
-            '  max-width: 100% !important;',
-            '  min-width: 0 !important;',
-            '  float: none !important;',
-            '  clear: both !important;',
-            '  display: block !important;',
-            '  box-sizing: border-box !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .ui-block-c > .ui-grid-b,',
-            'html.' + MODE_CLASS + ' #content_2 .ui-block-c > .ui-grid-b,',
-            'html.' + MODE_CLASS + ' #content_3 .ui-block-c > .ui-grid-b,',
-            'html.' + MODE_CLASS + ' #content_4 .ui-block-c > .ui-grid-b,',
-            'html.' + MODE_CLASS + ' #content_5 .ui-block-c > .ui-grid-b,',
-            'html.' + MODE_CLASS + ' #content_6 .ui-block-c > .ui-grid-b,',
-            'html.' + MODE_CLASS + ' #content_7 .ui-block-c > .ui-grid-b {',
-            '  display: flex !important;',
-            '  flex-direction: row !important;',
-            '  flex-wrap: nowrap !important;',
-            '  align-items: flex-start !important;',
-            '  width: 100% !important;',
-            '  max-width: 100% !important;',
-            '  min-width: 0 !important;',
-            '  box-sizing: border-box !important;',
-            '  float: none !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .ui-block-c > .ui-grid-b > .ui-block-a,',
-            'html.' + MODE_CLASS + ' #content_2 .ui-block-c > .ui-grid-b > .ui-block-a,',
-            'html.' + MODE_CLASS + ' #content_3 .ui-block-c > .ui-grid-b > .ui-block-a,',
-            'html.' + MODE_CLASS + ' #content_4 .ui-block-c > .ui-grid-b > .ui-block-a,',
-            'html.' + MODE_CLASS + ' #content_5 .ui-block-c > .ui-grid-b > .ui-block-a,',
-            'html.' + MODE_CLASS + ' #content_6 .ui-block-c > .ui-grid-b > .ui-block-a,',
-            'html.' + MODE_CLASS + ' #content_7 .ui-block-c > .ui-grid-b > .ui-block-a {',
-            '  flex: 6 1 0% !important;',
-            '  min-width: 0 !important;',
-            '  max-width: 100% !important;',
-            '  width: auto !important;',
-            '  box-sizing: border-box !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .ui-block-c > .ui-grid-b > .ui-block-b,',
-            'html.' + MODE_CLASS + ' #content_2 .ui-block-c > .ui-grid-b > .ui-block-b,',
-            'html.' + MODE_CLASS + ' #content_3 .ui-block-c > .ui-grid-b > .ui-block-b,',
-            'html.' + MODE_CLASS + ' #content_4 .ui-block-c > .ui-grid-b > .ui-block-b,',
-            'html.' + MODE_CLASS + ' #content_5 .ui-block-c > .ui-grid-b > .ui-block-b,',
-            'html.' + MODE_CLASS + ' #content_6 .ui-block-c > .ui-grid-b > .ui-block-b,',
-            'html.' + MODE_CLASS + ' #content_7 .ui-block-c > .ui-grid-b > .ui-block-b {',
-            '  flex: 4 1 0% !important;',
-            '  min-width: 0 !important;',
-            '  max-width: 100% !important;',
-            '  width: auto !important;',
-            '  box-sizing: border-box !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .ui-block-c > .ui-grid-b > .ui-block-c,',
-            'html.' + MODE_CLASS + ' #content_2 .ui-block-c > .ui-grid-b > .ui-block-c,',
-            'html.' + MODE_CLASS + ' #content_3 .ui-block-c > .ui-grid-b > .ui-block-c,',
-            'html.' + MODE_CLASS + ' #content_4 .ui-block-c > .ui-grid-b > .ui-block-c,',
-            'html.' + MODE_CLASS + ' #content_5 .ui-block-c > .ui-grid-b > .ui-block-c,',
-            'html.' + MODE_CLASS + ' #content_6 .ui-block-c > .ui-grid-b > .ui-block-c,',
-            'html.' + MODE_CLASS + ' #content_7 .ui-block-c > .ui-grid-b > .ui-block-c {',
-            '  flex: 2 1 0% !important;',
-            '  min-width: 0 !important;',
-            '  max-width: 100% !important;',
-            '  width: auto !important;',
-            '  box-sizing: border-box !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]),',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body input:not([type]),',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body select,',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body textarea {',
-            '  width: 100% !important;',
-            '  max-width: 100% !important;',
-            '  min-width: 0 !important;',
-            '  min-height: 42px !important;',
-            '  height: auto !important;',
-            '  padding: 6px 2px !important;',
-            '  border: 0 !important;',
-            '  border-bottom: 2px solid var(--tmk-c-search-input-border) !important;',
-            '  border-radius: 0 !important;',
-            '  background: transparent !important;',
-            '  background-clip: padding-box !important;',
-            '  color: var(--tmk-c-major-font) !important;',
-            '  font-size: 20px !important;',
-            '  line-height: 1.35 !important;',
-            '  box-sizing: border-box !important;',
-            '  box-shadow: none !important;',
-            '  outline: none !important;',
-            '  margin: 0 !important;',
-            '  float: none !important;',
-            '  -webkit-appearance: none;',
-            '  appearance: none;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body input::placeholder,',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body textarea::placeholder {',
-            '  color: color-mix(in srgb, var(--tmk-c-minor-focus) 50%, transparent) !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body select {',
-            '  -webkit-appearance: menulist;',
-            '  appearance: auto;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body textarea {',
-            '  min-height: 84px !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body input:not([type="checkbox"]):not([type="radio"]):focus,',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body select:focus,',
-            'html.' + MODE_CLASS + ' #content_1 .tmk-lostform-v2-fs-body textarea:focus {',
-            '  border-bottom-color: var(--tmk-c-major-focus) !important;',
-            '  box-shadow: none !important;',
-            '  outline: none !important;',
-            '}',
-            '#tmk-lostform-v2-quick { margin-top: 4px; color: var(--tmk-c-major-font); position: relative; }',
-            '.tmk-lostform-v2-qf-loading { display: none; margin: 0 0 10px 0; font-size: 15px; color: var(--tmk-c-major-font); opacity: 0.75; }',
-            '#tmk-lostform-v2-quick.tmk-lostform-v2-quick--pending .tmk-lostform-v2-qf-loading { display: block; }',
-            '#tmk-lostform-v2-quick.tmk-lostform-v2-quick--pending .tmk-lostform-v2-qf-grid { opacity: 0.45; pointer-events: none; }',
-            '#tmk-lostform-v2-quick .tmk-lostform-v2-qf-title {',
+            '#tmk-pnr-quick { margin-top: 4px; color: var(--tmk-c-major-font); position: relative; }',
+            '.tmk-pnr-qf-loading { display: none; margin: 0 0 10px 0; font-size: 15px; color: var(--tmk-c-major-font); opacity: 0.75; }',
+            '#tmk-pnr-quick.tmk-pnr-quick--pending .tmk-pnr-qf-loading { display: block; }',
+            '#tmk-pnr-quick.tmk-pnr-quick--pending .tmk-pnr-qf-grid { opacity: 0.45; pointer-events: none; }',
+            '#tmk-pnr-quick .tmk-pnr-qf-title {',
             '  font-size: 34px;',
             '  font-weight: 700;',
             '  color: var(--tmk-c-major-font);',
             '  margin: 0 0 18px 0;',
             '}',
-            '#tmk-lostform-v2-quick .tmk-lostform-v2-qf-grid {',
+            '#tmk-pnr-quick .tmk-pnr-qf-grid {',
             '  display: grid;',
             '  grid-template-columns: repeat(var(--tmk-qf-cols, 1), minmax(0, 1fr));',
             '  gap: calc(var(--tmk-gap, 10px) * 1.2);',
@@ -1725,7 +1468,7 @@
             '  width: 100%;',
             '  box-sizing: border-box;',
             '}',
-            '#tmk-lostform-v2-quick .tmk-lostform-v2-qf-field {',
+            '#tmk-pnr-quick .tmk-pnr-qf-field {',
             '  display: flex;',
             '  flex-direction: row;',
             '  align-items: center;',
@@ -1735,10 +1478,10 @@
             '  width: 100%;',
             '  box-sizing: border-box;',
             '}',
-            '#tmk-lostform-v2-quick .tmk-lostform-v2-qf-field .tmk-lostform-v2-qf-label {',
+            '#tmk-pnr-quick .tmk-pnr-qf-field .tmk-pnr-qf-label {',
             '  margin-top: 0;',
             '}',
-            '#tmk-lostform-v2-quick .tmk-lostform-v2-qf-label {',
+            '#tmk-pnr-quick .tmk-pnr-qf-label {',
             '  font-size: 18px;',
             '  color: var(--tmk-c-major-font);',
             '  display: block;',
@@ -1749,7 +1492,7 @@
             '  text-overflow: clip;',
             '  line-height: 1.3;',
             '}',
-            '#tmk-lostform-v2-quick input {',
+            '#tmk-pnr-quick input {',
             '  flex: 1 1 auto;',
             '  min-width: 0;',
             '  min-height: 42px;',
@@ -1762,10 +1505,10 @@
             '  box-sizing: border-box;',
             '  font-size: 20px;',
             '}',
-            '#tmk-lostform-v2-quick input::placeholder {',
+            '#tmk-pnr-quick input::placeholder {',
             '  color: color-mix(in srgb, var(--tmk-c-minor-focus) 50%, transparent) !important;',
             '}',
-            '#tmk-lostform-v2-quick input:focus {',
+            '#tmk-pnr-quick input:focus {',
             '  border-bottom-color: var(--tmk-c-major-focus);',
             '  outline: none;',
             '  box-shadow: none;',
@@ -1787,13 +1530,13 @@
             '  gap: 4px;',
             '  align-items: stretch;',
             '}',
-            '#' + PREVIEW_SLOT_ID + '.tmk-lostform-v2-qf-preview--on {',
+            '#' + PREVIEW_SLOT_ID + '.tmk-pnr-qf-preview--on {',
             '  display: block;',
             '}',
-            '#' + ACTION_BAR_ID + '.tmk-lostform-v2-qf-action-bar--on {',
+            '#' + ACTION_BAR_ID + '.tmk-pnr-qf-action-bar--on {',
             '  display: flex;',
             '}',
-            '.tmk-lostform-v2-qf-action {',
+            '.tmk-pnr-qf-action {',
             '  position: static;',
             '  z-index: ' + z.functionButton + ';',
             '  width: 100%;',
@@ -1828,7 +1571,7 @@
             '  opacity: 1;',
             '  box-shadow: none;',
             '}',
-            '#' + PREVIEW_BTN_ID + '.tmk-lostform-v2-qf-preview-btn {',
+            '#' + PREVIEW_BTN_ID + '.tmk-pnr-qf-preview-btn {',
             '  position: static !important;',
             '  width: 100%;',
             '  flex: 1 1 0;',
@@ -1874,34 +1617,29 @@
             '  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);',
             '  outline: none;',
             '}',
-            'html.' + MODE_CLASS + ' .tmk-lostform-v2-qf-fab--on {',
+            'html.' + MODE_CLASS + ' .tmk-pnr-qf-fab--on {',
             '  display: inline-flex !important;',
             '}',
-            'html.' + MODE_CLASS + ' #' + PREVIEW_BTN_ID + '.tmk-lostform-v2-qf-preview--on {',
+            'html.' + MODE_CLASS + ' #' + PREVIEW_BTN_ID + '.tmk-pnr-qf-preview--on {',
             '  display: inline-flex !important;',
             '}',
-            'html.' + MODE_CLASS + ' #' + DETAIL_QUICK_FILL_FAB_ID + '.tmk-lostform-v2-qf-fab-detail--on {',
+            'html.' + MODE_CLASS + ' #' + DETAIL_QUICK_FILL_FAB_ID + '.tmk-pnr-qf-fab-detail--on {',
             '  display: inline-flex !important;',
             '}',
-            'html.' + MODE_CLASS + '.tmk-lostform-v2-hide-native-nav #clear,',
-            'html.' + MODE_CLASS + '.tmk-lostform-v2-hide-native-nav #pre,',
-            'html.' + MODE_CLASS + '.tmk-lostform-v2-hide-native-nav #next {',
-            '  display: none !important;',
-            '}',
-            '#tmk-lostform-v2-qf-hint {',
+            '#tmk-pnr-qf-hint {',
             '  font-size: 17px;',
             '  color: var(--tmk-c-minor-button);',
             '  margin-top: 9px;',
             '  line-height: 1.35;',
             '}',
-            '#tmk-lostform-v2-sub36 {',
+            '#tmk-pnr-sub36 {',
             '  display: none;',
             '  margin-top: 8px;',
             '  flex-wrap: wrap;',
             '  gap: 6px;',
             '}',
-            '#tmk-lostform-v2-sub36.tmk-lostform-v2-sub--on { display: flex !important; }',
-            '.tmk-lostform-v2-sub-btn {',
+            '#tmk-pnr-sub36.tmk-pnr-sub--on { display: flex !important; }',
+            '.tmk-pnr-sub-btn {',
             '  padding: 4px 8px;',
             '  font-size: 12px;',
             '  border: 1px solid var(--tmk-c-search-input-border);',
@@ -1910,28 +1648,19 @@
             '  color: var(--tmk-c-major-font);',
             '  cursor: pointer;',
             '}',
-            '.tmk-lostform-v2-sub-btn.is-active {',
+            '.tmk-pnr-sub-btn.is-active {',
             '  background: var(--tmk-c-major-focus);',
             '  border-color: var(--tmk-c-major-focus);',
             '  color: var(--tmk-c-lv1-fg);',
             '}',
-            'html.' + MODE_CLASS + ' .tmk-lostform-v2-pane-hidden { display: none !important; }',
-            'html.' + MODE_CLASS + ' #content_1,',
-            'html.' + MODE_CLASS + ' #content_2,',
-            'html.' + MODE_CLASS + ' #content_3,',
-            'html.' + MODE_CLASS + ' #content_4,',
-            'html.' + MODE_CLASS + ' #content_5,',
-            'html.' + MODE_CLASS + ' #content_6,',
-            'html.' + MODE_CLASS + ' #content_7 {',
-            '  display: none !important;',
-            '}',
+            'html.' + MODE_CLASS + ' .tmk-pnr-pane-hidden { display: none !important; }',
             'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + ' {',
             '  display: none;',
             '  width: 100%;',
             '  max-width: 100%;',
             '  box-sizing: border-box;',
             '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '.tmk-lostform-v2-mirror-page--on {',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '.tmk-pnr-mirror-page--on {',
             '  display: block;',
             '}',
             'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + ' .l_mainContentL1,',
@@ -1940,16 +1669,16 @@
             'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + ' .ui-content {',
             '  background: transparent !important;',
             '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-lostform-v2-fs-panel {',
-            '  margin: 12px var(--tmk-lostform-v2-c1-panel-mx, 15px);',
-            '  width: calc(100% - 2 * var(--tmk-lostform-v2-c1-panel-mx, 15px));',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-panel {',
+            '  margin: 12px var(--tmk-pnr-c1-panel-mx, 15px);',
+            '  width: calc(100% - 2 * var(--tmk-pnr-c1-panel-mx, 15px));',
             '  max-width: none;',
             '  box-sizing: border-box;',
             '  border: 1px solid var(--tmk-c-search-input-border);',
             '  border-radius: 10px;',
             '  overflow: hidden;',
             '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-lostform-v2-fs-toggle {',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-toggle {',
             '  display: block;',
             '  width: 100%;',
             '  min-height: 66px;',
@@ -1964,39 +1693,82 @@
             '  box-sizing: border-box;',
             '  color: var(--tmk-c-major-font);',
             '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-lostform-v2-fs-body {',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body {',
             '  padding: 12px 0;',
             '  border-top: 1px solid var(--tmk-c-search-input-border);',
-            '  overflow-x: hidden;',
+            '  overflow-x: auto;',
             '  max-width: 100%;',
             '  min-width: 0;',
             '  box-sizing: border-box;',
             '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-lostform-v2-fs-panel.is-collapsed .tmk-lostform-v2-fs-body {',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body > fieldset {',
+            '  width: 720px !important;',
+            '  max-width: 720px !important;',
+            '  min-width: 720px !important;',
+            '  margin: 0 !important;',
+            '}',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-panel.is-collapsed .tmk-pnr-fs-body {',
             '  display: none !important;',
             '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-lostform-v2-fs-body > fieldset > legend {',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body > fieldset > legend {',
             '  display: none !important;',
             '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-lostform-v2-c1-hide,',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-c1-hide,',
             'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .ui-grid-b.l_low {',
             '  display: none !important;',
             '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-lostform-v2-fs-body .ui-grid-a {',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-a {',
             '  display: grid !important;',
             '  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;',
             '  align-items: start !important;',
             '  column-gap: 0 !important;',
             '  row-gap: 8px !important;',
-            '  width: min(100%, 720px) !important;',
+            '  width: 720px !important;',
             '  max-width: 720px !important;',
+            '  min-width: 720px !important;',
             '  box-sizing: border-box !important;',
             '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-lostform-v2-fs-body .ui-grid-a > [class*="ui-block-"] {',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-a > [class*="ui-block-"] {',
             '  width: 100% !important;',
             '  max-width: 360px !important;',
             '  min-width: 0 !important;',
             '  box-sizing: border-box !important;',
+            '}',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-a.l_row,',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-b.l_row,',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-c.l_row,',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-d.l_row {',
+            '  display: flex !important;',
+            '  flex-wrap: wrap !important;',
+            '  align-items: flex-start !important;',
+            '  width: 720px !important;',
+            '  max-width: 720px !important;',
+            '  min-width: 720px !important;',
+            '  box-sizing: border-box !important;',
+            '  margin: 0 !important;',
+            '  padding: 0 !important;',
+            '  gap: 0 !important;',
+            '}',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-a.l_row > [class*="ui-block-"],',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-b.l_row > [class*="ui-block-"],',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-c.l_row > [class*="ui-block-"],',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-d.l_row > [class*="ui-block-"] {',
+            '  flex: 0 0 360px !important;',
+            '  width: 360px !important;',
+            '  max-width: 360px !important;',
+            '  min-width: 0 !important;',
+            '  float: none !important;',
+            '  box-sizing: border-box !important;',
+            '  margin: 0 !important;',
+            '  padding: 0 !important;',
+            '}',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-a.l_row > [class*="ui-block-"] .ui-grid-a,',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-b.l_row > [class*="ui-block-"] .ui-grid-a,',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-c.l_row > [class*="ui-block-"] .ui-grid-a,',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-d.l_row > [class*="ui-block-"] .ui-grid-a {',
+            '  width: 100% !important;',
+            '  max-width: 100% !important;',
+            '  min-width: 0 !important;',
             '}',
             'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .ui-block-c > .ui-grid-b {',
             '  display: grid !important;',
@@ -2017,10 +1789,10 @@
             '  float: none !important;',
             '  box-sizing: border-box !important;',
             '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-lostform-v2-fs-body input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]),',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-lostform-v2-fs-body input:not([type]),',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-lostform-v2-fs-body select,',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-lostform-v2-fs-body textarea {',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]),',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body input:not([type]),',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body select,',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body textarea {',
             '  width: 100% !important;',
             '  max-width: 100% !important;',
             '  min-width: 0 !important;',
@@ -2036,16 +1808,20 @@
             '  box-shadow: none !important;',
             '  outline: none !important;',
             '}',
-            'html.' + MODE_CLASS + ' .l_footer {',
-            '  position: relative;',
-            '  z-index: ' + z.basePage + ';',
+            '#' + TOOLBAR_ID + '.tmk-ui-hidden,',
+            '#' + STEPPER_BAR_ID + '.tmk-ui-hidden,',
+            '#' + SHELL_ID + '.tmk-ui-hidden,',
+            '#' + STAGE_ID + '.tmk-ui-hidden,',
+            '#' + GLASS_ID + '.tmk-ui-hidden {',
+            '  display: none !important;',
             '}'
         ].join('\n');
         document.head.appendChild(style);
     }
 
 
-    function ensureGlass() {
+    // 功能：创建并挂载背景毛玻璃层。
+    function mountGlassLayer() {
         if (!document.body) return;
         let el = document.getElementById(GLASS_ID);
         if (!el) {
@@ -2057,54 +1833,58 @@
     }
 
 
+    // 功能：渲染覆盖层显示/隐藏切换入口。
     function renderToolbar() {
         if (!document.body || document.getElementById(TOOLBAR_ID)) return;
         const bar = document.createElement('div');
         bar.id = TOOLBAR_ID;
         bar.innerHTML =
-            '<button type="button" class="tmk-lostform-v2-tb-btn tmk-active" data-tmk-mode="modern">我的视图</button>' +
-            '<button type="button" class="tmk-lostform-v2-tb-btn" data-tmk-mode="legacy">原版页面</button>';
+            '<button type="button" class="tmk-pnr-tb-btn tmk-active" data-tmk-ui="on">我的视图</button>' +
+            '<button type="button" class="tmk-pnr-tb-btn" data-tmk-ui="off">原版页面</button>';
         document.body.appendChild(bar);
         bar.addEventListener('click', function(ev) {
             const t = ev.target;
             if (!t || !t.getAttribute) return;
-            const m = t.getAttribute('data-tmk-mode');
-            if (!m) return;
-            setMode(m);
+            const v = t.getAttribute('data-tmk-ui');
+            if (!v) return;
+            setUiVisible(v === 'on');
         });
     }
 
 
+    // 功能：同步工具栏按钮选中态。
     function updateToolbarButtons() {
         const bar = document.getElementById(TOOLBAR_ID);
         if (!bar) return;
-        bar.querySelectorAll('.tmk-lostform-v2-tb-btn').forEach(function(btn) {
-            btn.classList.toggle('tmk-active', btn.getAttribute('data-tmk-mode') === state.mode);
+        bar.querySelectorAll('.tmk-pnr-tb-btn').forEach(function(btn) {
+            const on = btn.getAttribute('data-tmk-ui') === (state.uiVisible ? 'on' : 'off');
+            btn.classList.toggle('tmk-active', on);
         });
     }
 
 
+    // 功能：生成覆盖层步骤条HTML。
     function buildStepperHtml() {
         const steps = [
-            { id: 'tmk-lostform-v2-s1', value: '1', label: '快捷' },
-            { id: 'tmk-lostform-v2-s2', value: '2', label: '详细' },
-            { id: 'tmk-lostform-v2-s3', value: '3', label: '信息' },
-            { id: 'tmk-lostform-v2-s4', value: '4', label: '追踪' }
+            { id: 'tmk-pnr-s1', value: '1', label: '快捷' },
+            { id: 'tmk-pnr-s2', value: '2', label: '详细' },
+            { id: 'tmk-pnr-s3', value: '3', label: '信息' },
+            { id: 'tmk-pnr-s4', value: '4', label: '追踪' }
         ];
         const parts = [];
-        parts.push('<div class="tmk-lostform-v2-stepper" role="radiogroup" aria-label="步骤">');
+        parts.push('<div class="tmk-pnr-stepper" role="radiogroup" aria-label="步骤">');
         steps.forEach(function(s, idx) {
             parts.push(
-                '<div class="tmk-lostform-v2-step-node">' +
-                '<input type="radio" name="tmk-lostform-v2-step" id="' + s.id + '" value="' + s.value + '"' + (s.value === '1' ? ' checked' : '') + ' />' +
-                '<label for="' + s.id + '" class="tmk-lostform-v2-step-visual">' +
-                '<span class="tmk-lostform-v2-step-ring"></span>' +
-                '<span class="tmk-lostform-v2-step-text">' + s.label + '</span>' +
+                '<div class="tmk-pnr-step-node">' +
+                '<input type="radio" name="tmk-pnr-step" id="' + s.id + '" value="' + s.value + '"' + (s.value === '1' ? ' checked' : '') + ' />' +
+                '<label for="' + s.id + '" class="tmk-pnr-step-visual">' +
+                '<span class="tmk-pnr-step-ring"></span>' +
+                '<span class="tmk-pnr-step-text">' + s.label + '</span>' +
                 '</label>' +
                 '</div>'
             );
             if (idx < steps.length - 1) {
-                parts.push('<span class="tmk-lostform-v2-step-connector" aria-hidden="true"></span>');
+                parts.push('<span class="tmk-pnr-step-connector" aria-hidden="true"></span>');
             }
         });
         parts.push('</div>');
@@ -2112,158 +1892,104 @@
     }
 
 
+    // 功能：生成快捷页HTML骨架。
     function buildQuickHtml() {
         return (
-            '<div id="tmk-lostform-v2-quick" class="tmk-lostform-v2-quick--pending">' +
-            '<p id="tmk-lostform-v2-qf-loading" class="tmk-lostform-v2-qf-loading">正在等待详细页字段加载...</p>' +
-            '<p class="tmk-lostform-v2-qf-title">完成前快捷填充</p>' +
-            '<div class="tmk-lostform-v2-qf-grid">' +
-            '<div class="tmk-lostform-v2-qf-field">' +
-            '<label id="tmk-lostform-v2-qf-label-nmgn" class="tmk-lostform-v2-qf-label" for="tmk-lostform-v2-qf-nmgn">NMs/GNs</label>' +
-            '<input id="tmk-lostform-v2-qf-nmgn" type="text" placeholder="LIU/GOSTNORT/LIANG/GORDON" autocomplete="off" />' +
+            '<div id="tmk-pnr-quick" class="tmk-pnr-quick--pending">' +
+            '<p id="tmk-pnr-qf-loading" class="tmk-pnr-qf-loading">正在等待详细页字段加载...</p>' +
+            '<p class="tmk-pnr-qf-title">完成前快捷填充</p>' +
+            '<div class="tmk-pnr-qf-grid">' +
+            '<div class="tmk-pnr-qf-field">' +
+            '<label id="tmk-pnr-qf-label-nmgn" class="tmk-pnr-qf-label" for="tmk-pnr-qf-nmgn">NMs/GNs</label>' +
+            '<input id="tmk-pnr-qf-nmgn" type="text" placeholder="LIU/GOSTNORT/LIANG/GORDON" autocomplete="off" />' +
             '</div>' +
-            '<div class="tmk-lostform-v2-qf-field">' +
-            '<label id="tmk-lostform-v2-qf-label-tn" class="tmk-lostform-v2-qf-label" for="tmk-lostform-v2-qf-tn">TNs</label>' +
-            '<input id="tmk-lostform-v2-qf-tn" type="text" placeholder="CA654321/CA123456" autocomplete="off" />' +
+            '<div class="tmk-pnr-qf-field">' +
+            '<label id="tmk-pnr-qf-label-tn" class="tmk-pnr-qf-label" for="tmk-pnr-qf-tn">TNs</label>' +
+            '<input id="tmk-pnr-qf-tn" type="text" placeholder="CA654321/CA123456" autocomplete="off" />' +
             '</div>' +
-            '<div class="tmk-lostform-v2-qf-field">' +
-            '<label id="tmk-lostform-v2-qf-label-ct" class="tmk-lostform-v2-qf-label" for="tmk-lostform-v2-qf-ct">CTs</label>' +
-            '<input id="tmk-lostform-v2-qf-ct" type="text" placeholder="BK22RHW/RD01XXX" autocomplete="off" />' +
+            '<div class="tmk-pnr-qf-field">' +
+            '<label id="tmk-pnr-qf-label-ct" class="tmk-pnr-qf-label" for="tmk-pnr-qf-ct">CTs</label>' +
+            '<input id="tmk-pnr-qf-ct" type="text" placeholder="BK22RHW/RD01XXX" autocomplete="off" />' +
             '</div>' +
-            '<div class="tmk-lostform-v2-qf-field">' +
-            '<label id="tmk-lostform-v2-qf-label-nw" class="tmk-lostform-v2-qf-label" for="tmk-lostform-v2-qf-nw">NW</label>' +
-            '<input id="tmk-lostform-v2-qf-nw" type="text" inputmode="numeric" autocomplete="off" />' +
+            '<div class="tmk-pnr-qf-field">' +
+            '<label id="tmk-pnr-qf-label-nw" class="tmk-pnr-qf-label" for="tmk-pnr-qf-nw">NW</label>' +
+            '<input id="tmk-pnr-qf-nw" type="text" inputmode="numeric" autocomplete="off" />' +
             '</div>' +
-            '<div class="tmk-lostform-v2-qf-field">' +
-            '<label id="tmk-lostform-v2-qf-label-pa" class="tmk-lostform-v2-qf-label" for="tmk-lostform-v2-qf-pa">PA</label>' +
-            '<input id="tmk-lostform-v2-qf-pa" type="text" placeholder="123 MAIN ST, LA, CA 90001" autocomplete="off" />' +
+            '<div class="tmk-pnr-qf-field">' +
+            '<label id="tmk-pnr-qf-label-pa" class="tmk-pnr-qf-label" for="tmk-pnr-qf-pa">PA</label>' +
+            '<input id="tmk-pnr-qf-pa" type="text" placeholder="123 MAIN ST, LA, CA 90001" autocomplete="off" />' +
             '</div>' +
-            '<div class="tmk-lostform-v2-qf-field">' +
-            '<label id="tmk-lostform-v2-qf-label-family" class="tmk-lostform-v2-qf-label" for="tmk-lostform-v2-qf-family">PN</label>' +
-            '<input id="tmk-lostform-v2-qf-family" type="text" placeholder="数字" autocomplete="off" />' +
+            '<div class="tmk-pnr-qf-field">' +
+            '<label id="tmk-pnr-qf-label-family" class="tmk-pnr-qf-label" for="tmk-pnr-qf-family">PN</label>' +
+            '<input id="tmk-pnr-qf-family" type="text" placeholder="数字" autocomplete="off" />' +
             '</div>' +
-            '<div class="tmk-lostform-v2-qf-field">' +
-            '<label id="tmk-lostform-v2-qf-label-cp" class="tmk-lostform-v2-qf-label" for="tmk-lostform-v2-qf-cp">CP</label>' +
-            '<input id="tmk-lostform-v2-qf-cp" type="text" value="' + DEFAULT_CP + '" autocomplete="off" />' +
+            '<div class="tmk-pnr-qf-field">' +
+            '<label id="tmk-pnr-qf-label-cp" class="tmk-pnr-qf-label" for="tmk-pnr-qf-cp">CP</label>' +
+            '<input id="tmk-pnr-qf-cp" type="text" value="' + DEFAULT_CP + '" autocomplete="off" />' +
             '</div>' +
             '<div id="' + PREVIEW_SLOT_ID + '"></div>' +
             '<div id="' + ACTION_BAR_ID + '"></div>' +
             '</div>' +
-            '<div id="tmk-lostform-v2-qf-hint">颜色类型 CT 段数须等于行李牌 TN 数量；NW 总件数须等于 TN 数量。CP 下方「预览」校验并写入后进入「详细」；右侧浮动钮与网页「新增」一致，校验写入后触发新增。</div>' +
+            '<div id="tmk-pnr-qf-hint">颜色类型 CT 段数须等于行李牌 TN 数量；NW 总件数须等于 TN 数量。CP 下方「预览」校验并写入后进入「详细」；右侧浮动钮与网页「新增」一致，校验写入后触发新增。</div>' +
             '</div>' +
-            '<div id="tmk-lostform-v2-sub36" aria-label="子区块"></div>'
+            '<div id="tmk-pnr-sub36" aria-label="子区块"></div>'
         );
     }
 
 
+    // 功能：保留空操作接口，避免修改原网页激活态。
     function syncMainContentActive(activeId) {
-        const ids = ['content_1', 'content_2', 'content_3', 'content_4', 'content_5', 'content_6', 'content_7'];
-        ids.forEach(function(id) {
-            const el = document.getElementById(id);
-            if (!el) return;
-            if (activeId && id === activeId) {
-                el.classList.add('l_active');
-            } else {
-                el.classList.remove('l_active');
-            }
-        });
+        return activeId;
     }
 
 
-    // 对齐少收表 v1：面板 + 全宽折叠条包 fieldset；首块默认展开，折叠条加宽加高
-    function setupCollapsibleFieldsetsV2() {
-        const c1 = document.getElementById('content_1');
-        if (!c1) return;
-        const fieldsets = Array.from(c1.querySelectorAll('fieldset')).slice(0, 5);
+    // 功能：装饰镜像详细页（分组折叠与首行隐藏）。
+    function decorateMirrorDetailPage(mirrorRoot) {
+        if (!mirrorRoot) return;
+        const childs = Array.from(mirrorRoot.children);
+        for (let i = 0; i < childs.length; i += 1) {
+            const el = childs[i];
+            if (el.tagName === 'FIELDSET') break;
+            if (el.classList && el.classList.contains('ui-grid-b') && el.classList.contains('l_row')) {
+                el.classList.add('tmk-pnr-c1-hide');
+                break;
+            }
+        }
+        const fieldsets = Array.from(mirrorRoot.querySelectorAll('fieldset')).slice(0, 5);
         fieldsets.forEach(function(fs, idx) {
-            if (!fs || fs.getAttribute('data-tmk-fs-v2-wrapped') === '1') return;
+            if (!fs || fs.closest('.tmk-pnr-fs-panel')) return;
             const legend = fs.querySelector('legend');
             const title = legend ? String(legend.textContent || '').replace(/\s+/g, ' ').trim() : '';
             const panel = document.createElement('div');
-            panel.className = 'tmk-lostform-v2-fs-panel' + (idx === 0 ? '' : ' is-collapsed');
+            panel.className = 'tmk-pnr-fs-panel' + (idx === 0 ? '' : ' is-collapsed');
             const toggle = document.createElement('button');
             toggle.type = 'button';
-            toggle.className = 'tmk-lostform-v2-fs-toggle';
+            toggle.className = 'tmk-pnr-fs-toggle';
             toggle.textContent = (title || '分组' + (idx + 1)) + '  ▾';
             const body = document.createElement('div');
-            body.className = 'tmk-lostform-v2-fs-body';
+            body.className = 'tmk-pnr-fs-body';
             fs.parentNode.insertBefore(panel, fs);
             panel.appendChild(toggle);
             panel.appendChild(body);
             body.appendChild(fs);
-            fs.setAttribute('data-tmk-fs-v2-wrapped', '1');
-            toggle.addEventListener('click', function() {
-                const wasCollapsed = panel.classList.contains('is-collapsed');
-                const panels = c1.querySelectorAll('.tmk-lostform-v2-fs-panel');
-                panels.forEach(function(p) {
-                    p.classList.add('is-collapsed');
-                });
-                if (wasCollapsed) panel.classList.remove('is-collapsed');
-            });
         });
-        state.content1FsBound = true;
     }
 
 
-    function teardownContent1Collapsible() {
-        const c1 = document.getElementById('content_1');
-        if (!c1) return;
-        Array.from(c1.querySelectorAll('.tmk-lostform-v2-fs-panel')).forEach(function(panel) {
-            const body = panel.querySelector('.tmk-lostform-v2-fs-body');
-            const fs = body ? body.querySelector('fieldset') : null;
-            if (fs && panel.parentNode) {
-                panel.parentNode.insertBefore(fs, panel);
-            }
-            panel.remove();
-        });
-        c1.querySelectorAll('fieldset[data-tmk-fs-v2-wrapped="1"]').forEach(function(fs) {
-            fs.removeAttribute('data-tmk-fs-v2-wrapped');
-        });
-        state.content1FsBound = false;
-    }
-
-
-    // 详细页顶行（受理航站/卷宗/日期等）在「我的视图」下隐藏；原版恢复显示
-    function markContent1HeaderRowHidden() {
-        const c1 = document.getElementById('content_1');
-        if (!c1 || c1.getAttribute('data-tmk-c1-header-v2') === '1') return;
-        const childs = Array.from(c1.children);
-        for (let i = 0; i < childs.length; i += 1) {
-            const el = childs[i];
-            if (el.classList && el.classList.contains('tmk-lostform-v2-fs-panel')) break;
-            if (el.tagName === 'FIELDSET') break;
-            if (el.classList && el.classList.contains('ui-grid-b') && el.classList.contains('l_row')) {
-                el.classList.add('tmk-lostform-v2-c1-hide');
-                c1.setAttribute('data-tmk-c1-header-v2', '1');
-                break;
-            }
-        }
-    }
-
-
-    function restoreContent1HeaderRowVisible() {
-        const c1 = document.getElementById('content_1');
-        if (!c1) return;
-        c1.querySelectorAll('.tmk-lostform-v2-c1-hide').forEach(function(el) {
-            el.classList.remove('tmk-lostform-v2-c1-hide');
-        });
-        c1.removeAttribute('data-tmk-c1-header-v2');
-    }
-
-
+    // 功能：构建信息页子区块切换按钮。
     function buildSub36Buttons() {
-        const wrap = document.getElementById('tmk-lostform-v2-sub36');
+        const wrap = document.getElementById('tmk-pnr-sub36');
         if (!wrap) return;
         wrap.innerHTML = '';
         [2, 3, 4, 5, 6].forEach(function(n) {
             const b = document.createElement('button');
             b.type = 'button';
-            b.className = 'tmk-lostform-v2-sub-btn' + (state.subStep36 === n ? ' is-active' : '');
+            b.className = 'tmk-pnr-sub-btn' + (state.subStep36 === n ? ' is-active' : '');
             b.textContent = '区块' + n;
             b.setAttribute('data-tmk-sub', String(n));
             b.addEventListener('click', function() {
                 state.subStep36 = n;
-                wrap.querySelectorAll('.tmk-lostform-v2-sub-btn').forEach(function(x) {
+                wrap.querySelectorAll('.tmk-pnr-sub-btn').forEach(function(x) {
                     x.classList.toggle('is-active', x.getAttribute('data-tmk-sub') === String(n));
                 });
                 applyPaneVisibility();
@@ -2273,8 +1999,9 @@
     }
 
 
+    // 功能：切换当前显示的镜像页面。
     function setActiveMirrorPage(pageNo) {
-        ensureStage();
+        mountStage();
         renderMirrorPage(pageNo);
         const stage = document.getElementById(STAGE_ID);
         if (!stage) return;
@@ -2282,26 +2009,36 @@
             const page = state.mirrorPageRefs[k];
             if (!page) return;
             const on = Number(k) === Number(pageNo);
-            page.classList.toggle('tmk-lostform-v2-mirror-page--on', on);
+            page.classList.toggle('tmk-pnr-mirror-page--on', on);
             if (on) syncMirrorFromSource(Number(k));
         });
     }
 
 
+    // 功能：根据步骤与可见状态切换覆盖层面板显示。
     function applyPaneVisibility() {
         const shell = document.getElementById(SHELL_ID);
-        const quick = document.getElementById('tmk-lostform-v2-quick');
-        const sub36 = document.getElementById('tmk-lostform-v2-sub36');
-        if (state.mode !== 'modern') return;
-        ensureStage();
-        if (shell) shell.classList.toggle('tmk-lostform-v2-shell--quick', state.mainStep === 1);
+        const quick = document.getElementById('tmk-pnr-quick');
+        const sub36 = document.getElementById('tmk-pnr-sub36');
+        if (!state.uiVisible) {
+            if (shell) shell.classList.remove('tmk-pnr-shell--quick');
+            const stageHidden = document.getElementById(STAGE_ID);
+            if (stageHidden) stageHidden.classList.remove('tmk-pnr-stage--on');
+            if (quick) quick.style.display = 'none';
+            if (sub36) sub36.classList.remove('tmk-pnr-sub--on');
+            updateNativeNavUi();
+            updateQuickFillFab();
+            return;
+        }
+        mountStage();
+        if (shell) shell.classList.toggle('tmk-pnr-shell--quick', state.mainStep === 1);
         const stageEl = document.getElementById(STAGE_ID);
-        if (stageEl) stageEl.classList.toggle('tmk-lostform-v2-stage--on', state.mainStep === 2 || state.mainStep === 3 || state.mainStep === 4);
+        if (stageEl) stageEl.classList.toggle('tmk-pnr-stage--on', state.mainStep === 2 || state.mainStep === 3 || state.mainStep === 4);
         if (quick) quick.style.display = state.mainStep === 1 ? 'block' : 'none';
         if (sub36) {
-            sub36.classList.toggle('tmk-lostform-v2-sub--on', state.mainStep === 3);
+            sub36.classList.toggle('tmk-pnr-sub--on', state.mainStep === 3);
             if (state.mainStep === 3) {
-                sub36.querySelectorAll('.tmk-lostform-v2-sub-btn').forEach(function(x) {
+                sub36.querySelectorAll('.tmk-pnr-sub-btn').forEach(function(x) {
                     x.classList.toggle('is-active', x.getAttribute('data-tmk-sub') === String(state.subStep36));
                 });
             }
@@ -2326,38 +2063,41 @@
     }
 
 
+    // 功能：在新UI可见时隐藏原生翻页按钮。
     function updateNativeNavUi() {
-        const on = state.mode === 'modern' && (state.mainStep === 1 || state.mainStep === 2);
-        document.documentElement.classList.toggle('tmk-lostform-v2-hide-native-nav', on);
+        const on = state.uiVisible && (state.mainStep === 1 || state.mainStep === 2);
+        document.documentElement.classList.toggle('tmk-pnr-hide-native-nav', on);
     }
 
 
+    // 功能：按当前步骤控制快捷/详细新增按钮显示。
     function updateQuickFillFab() {
         const fab = document.getElementById(QUICK_FILL_FAB_ID);
         const detailFab = document.getElementById(DETAIL_QUICK_FILL_FAB_ID);
         const prev = document.getElementById(PREVIEW_BTN_ID);
         const slot = document.getElementById(PREVIEW_SLOT_ID);
         const actionBar = document.getElementById(ACTION_BAR_ID);
-        const on = state.mode === 'modern' && (state.mainStep === 1 || state.mainStep === 2);
+        const on = state.uiVisible && (state.mainStep === 1 || state.mainStep === 2);
         const quickOn = on && state.quickReady && state.mainStep === 1;
         const detailOn = on && state.mainStep === 2;
-        if (fab) fab.classList.toggle('tmk-lostform-v2-qf-fab--on', quickOn);
-        if (detailFab) detailFab.classList.toggle('tmk-lostform-v2-qf-fab-detail--on', detailOn);
-        if (prev) prev.classList.toggle('tmk-lostform-v2-qf-preview--on', quickOn);
-        if (slot) slot.classList.toggle('tmk-lostform-v2-qf-preview--on', quickOn);
-        if (actionBar) actionBar.classList.toggle('tmk-lostform-v2-qf-action-bar--on', quickOn);
+        if (fab) fab.classList.toggle('tmk-pnr-qf-fab--on', quickOn);
+        if (detailFab) detailFab.classList.toggle('tmk-pnr-qf-fab-detail--on', detailOn);
+        if (prev) prev.classList.toggle('tmk-pnr-qf-preview--on', quickOn);
+        if (slot) slot.classList.toggle('tmk-pnr-qf-preview--on', quickOn);
+        if (actionBar) actionBar.classList.toggle('tmk-pnr-qf-action-bar--on', quickOn);
     }
 
 
     function syncRadiosFromState() {
         const v = String(state.mainStep);
-        const radio = document.querySelector('input[name="tmk-lostform-v2-step"][value="' + v + '"]');
+        const radio = document.querySelector('input[name="tmk-pnr-step"][value="' + v + '"]');
         if (radio) radio.checked = true;
     }
 
 
+    // 功能：绑定覆盖层步骤与快捷输入事件。
     function bindShellEvents() {
-        document.querySelectorAll('input[name="tmk-lostform-v2-step"]').forEach(function(r) {
+        document.querySelectorAll('input[name="tmk-pnr-step"]').forEach(function(r) {
             r.addEventListener('change', function() {
                 if (!r.checked) return;
                 state.mainStep = parseInt(r.value, 10) || 1;
@@ -2385,56 +2125,57 @@
     }
 
 
+    // 功能：读取全局关闭时间戳，仅做状态消费不切换视图。
     function enforceUiGlobalControl() {
         const forceTs = readForceCloseViewsTs();
         if (forceTs > state.lastForceCloseTs) {
             state.lastForceCloseTs = forceTs;
-            if (state.mode === 'modern') setMode('legacy');
         }
     }
 
 
-    function setMode(mode) {
-        state.mode = mode === 'legacy' ? 'legacy' : 'modern';
-        if (state.mode === 'legacy') {
-            document.documentElement.classList.remove(MODE_CLASS);
-            document.documentElement.classList.remove('tmk-lostform-v2-hide-native-nav');
-            if (state.detailSyncTimer) {
-                try {
-                    window.clearInterval(state.detailSyncTimer);
-                } catch (e) {}
-                state.detailSyncTimer = null;
-            }
-            const fabLegacy = document.getElementById(QUICK_FILL_FAB_ID);
-            if (fabLegacy) fabLegacy.classList.remove('tmk-lostform-v2-qf-fab--on');
-            const prevLegacy = document.getElementById(PREVIEW_BTN_ID);
-            if (prevLegacy) prevLegacy.classList.remove('tmk-lostform-v2-qf-preview--on');
-            restoreStageContentsToForm();
-            teardownContent1Collapsible();
-            restoreContent1HeaderRowVisible();
-            if (state.glass) state.glass.style.display = 'none';
-            document.documentElement.style.removeProperty('--tmk-lostform-v2-body-pad');
-            document.documentElement.style.removeProperty('--tmk-lostform-v2-body-pad-bottom');
-        } else {
+    // 功能：切换新UI显示状态（仅隐藏/显示覆盖层）。
+    function setUiVisible(visible) {
+        state.uiVisible = visible !== false;
+        function readOverlayRefs() {
+            return [
+                document.getElementById(TOOLBAR_ID),
+                document.getElementById(STEPPER_BAR_ID),
+                document.getElementById(SHELL_ID),
+                document.getElementById(STAGE_ID),
+                document.getElementById(GLASS_ID)
+            ];
+        }
+        if (state.uiVisible) {
             document.documentElement.classList.add(MODE_CLASS);
-            setupCollapsibleFieldsetsV2();
-            markContent1HeaderRowHidden();
-            ensureStage();
-            ensureDetailQuickFillFab();
+            mountStage();
+            mountDetailQuickFillFab();
             if (state.glass) state.glass.style.display = 'block';
+            readOverlayRefs().forEach(function(el) {
+                if (el) el.classList.remove('tmk-ui-hidden');
+            });
+            applyPaneVisibility();
+        } else {
+            document.documentElement.classList.remove(MODE_CLASS);
+            document.documentElement.classList.remove('tmk-pnr-hide-native-nav');
+            if (state.glass) state.glass.style.display = 'none';
+            readOverlayRefs().forEach(function(el) {
+                if (el && el.id !== TOOLBAR_ID) el.classList.add('tmk-ui-hidden');
+            });
             applyPaneVisibility();
         }
         updateToolbarButtons();
     }
 
 
-    function ensureDetailQuickFillFab() {
+    // 功能：挂载详细页新增按钮到覆盖层舞台。
+    function mountDetailQuickFillFab() {
         let detailFab = document.getElementById(DETAIL_QUICK_FILL_FAB_ID);
         if (!detailFab) {
             detailFab = document.createElement('button');
             detailFab.id = DETAIL_QUICK_FILL_FAB_ID;
             detailFab.type = 'button';
-            detailFab.className = 'tmk-lostform-v2-qf-action';
+            detailFab.className = 'tmk-pnr-qf-action';
             detailFab.setAttribute('title', '新增');
             detailFab.setAttribute('aria-label', '新增');
             detailFab.textContent = '新增';
@@ -2447,18 +2188,19 @@
     }
 
 
+    // 功能：挂载覆盖层UI并初始化事件。
     function mount() {
         injectStyles();
-        ensureGlass();
+        mountGlassLayer();
         renderToolbar();
         applyLeftGap();
         if (document.getElementById(SHELL_ID)) {
-            ensureStage();
+            mountStage();
             return true;
         }
         const stepBar = document.createElement('div');
         stepBar.id = STEPPER_BAR_ID;
-        stepBar.className = 'tmk-lostform-v2-stepper-bar';
+        stepBar.className = 'tmk-pnr-stepper-bar';
         stepBar.innerHTML = buildStepperHtml();
         document.body.appendChild(stepBar);
         const shell = document.createElement('div');
@@ -2466,12 +2208,12 @@
         shell.innerHTML = buildQuickHtml();
         document.body.appendChild(shell);
         state.shell = shell;
-        ensureStage();
+        mountStage();
         if (!document.getElementById(QUICK_FILL_FAB_ID)) {
             const fab = document.createElement('button');
             fab.id = QUICK_FILL_FAB_ID;
             fab.type = 'button';
-            fab.className = 'tmk-lostform-v2-qf-action';
+            fab.className = 'tmk-pnr-qf-action';
             fab.setAttribute('title', '新增');
             fab.setAttribute('aria-label', '新增');
             fab.textContent = '新增';
@@ -2482,12 +2224,12 @@
             if (actionBar) actionBar.appendChild(fab);
             else shell.appendChild(fab);
         }
-        ensureDetailQuickFillFab();
+        mountDetailQuickFillFab();
         if (!document.getElementById(PREVIEW_BTN_ID)) {
             const prev = document.createElement('button');
             prev.id = PREVIEW_BTN_ID;
             prev.type = 'button';
-            prev.className = 'tmk-lostform-v2-qf-action tmk-lostform-v2-qf-preview-btn';
+            prev.className = 'tmk-pnr-qf-action tmk-pnr-qf-preview-btn';
             prev.setAttribute('title', '预览');
             prev.setAttribute('aria-label', '预览');
             prev.textContent = '预览';
@@ -2513,17 +2255,14 @@
         syncRadiosFromState();
         applyPaneVisibility();
         state.lastForceCloseTs = readForceCloseViewsTs();
-        setMode('modern');
+        setUiVisible(true);
         window.setInterval(function() {
             enforceUiGlobalControl();
             tryMarkQuickReady();
         }, 400);
         setTimeout(tryMarkQuickReady, 0);
-        setTimeout(syncFabLabelFromDom, 800);
-        setTimeout(syncFabLabelFromDom, 2000);
+        setTimeout(syncFabLabelFromDom, 500);
         setTimeout(syncThemeVarsFromUi, 0);
-        setTimeout(syncThemeVarsFromUi, 500);
-        setTimeout(syncThemeVarsFromUi, 1500);
         window.addEventListener('resize', function() {
             applyLeftGap();
             applyShellOffset();
@@ -2536,6 +2275,7 @@
     }
 
 
+    // 功能：检测页面就绪后触发挂载。
     function tryBootstrap() {
         const form = document.querySelector('#form');
         if (!form) return false;
@@ -2558,6 +2298,7 @@
     }
 
 
+    // 功能：启动入口轮询，直到挂载成功。
     function bootstrap() {
         applyLeftGap();
         if (tryBootstrap()) return;
