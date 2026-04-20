@@ -2,3 +2,5 @@
 *.html
 *.htm
 *.jsp
+package*
+test*

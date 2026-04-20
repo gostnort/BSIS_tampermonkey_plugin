@@ -2,7 +2,7 @@
 // @name         BCheckWeb 少收表 v2 覆盖层
 // @namespace    http://tampermonkey.net/
 // @version      2.2.4
-// @description  新建少收：快捷仅壳显示；详情/信息/追踪进 tmk-stage；TN 规则同前；步骤条置顶透明；与少收表 v1 请勿同时启用
+// @description  新建少收：AHL仅壳显示；详情/信息/追踪进 tmk-stage；TN 规则同前；步骤条置顶透明；与少收表 v1 请勿同时启用
 // @author       Gostnort
 // @match        http://60.247.100.98/BCheckWeb/*
 // @match        https://60.247.100.98/BCheckWeb/*
@@ -14,7 +14,6 @@
 
 (function() {
     'use strict';
-    // 与 BCheckWeb 少收表_v1.js 互斥：请勿同时启用两套少收表 UI 脚本。
     const PAGE_RE = /(?:newNull)?BaggageLost_newBaggageLostAction\.action/i;
     const INIT_FLAG = '__tmkPnrInit';
     const STYLE_ID = 'tmk-pnr-style';
@@ -28,6 +27,17 @@
     const PREVIEW_BTN_ID = 'tmk-pnr-qf-preview';
     const PREVIEW_SLOT_ID = 'tmk-pnr-qf-preview-slot';
     const ACTION_BAR_ID = 'tmk-pnr-qf-action-bar';
+    const INFO_STAGE_ID = 'tmk-pnr-info-stage';
+    const STEP2_PAGE_NO = 1;
+    const INFO_STAGE_BTN_CLASS = 'tmk-pnr-info-btn';
+    const STEP2_OVERLAY_CLASS = 'tmk-pnr-step2-overlay';
+    const STEP2_GROUP_CLASS = 'tmk-pnr-fs-group';
+    const STEP2_GROUP_TITLE_CLASS = 'tmk-pnr-fs-title';
+    const STEP2_GROUP_FIELDS_CLASS = 'tmk-pnr-fs-fields';
+    const STEP2_FIELD_CLASS = 'tmk-pnr-field';
+    const STEP2_FIELD_WIDE_CLASS = 'tmk-pnr-field--wide';
+    const STEP2_FIELD_LABEL_CLASS = 'tmk-pnr-label';
+    const STEP2_FIELD_CONTROL_CLASS = 'tmk-pnr-fs-control';
     const MODE_CLASS = 'tmk-pnr-modern';
     const MIRROR_PAGE_CLASS = 'tmk-pnr-mirror-page';
     const FORCE_CLOSE_VIEWS_KEY = 'tmk-force-close-views-ts';
@@ -44,7 +54,7 @@
     const state = {
         uiVisible: true,
         mainStep: 1,
-        subStep36: 2,
+        infoStep: 2,
         glass: null,
         shell: null,
         capsLockActive: false,
@@ -78,32 +88,6 @@
         } catch (e) {}
         if (window.__tmkZLayers) return normalizeZLayers(window.__tmkZLayers);
         return normalizeZLayers(null);
-    }
-
-
-    // v2 覆盖层必须在 BCheckWeb_UI 之下：统一压低 z-index，避免挡住 UI 浮层
-    function getV2ZLayers() {
-        const ui = getSharedZLayers();
-        const cap = {
-            backgroundCover: 80,
-            mainFunctionView: 300,
-            functionButton: 320,
-            searchControls: 330,
-            floatingButton: 340
-        };
-        const out = {
-            basePage: 0,
-            backgroundCover: Math.min(Number(ui.backgroundCover) || 100, cap.backgroundCover),
-            mainFunctionView: Math.min(Number(ui.mainFunctionView) || 500, cap.mainFunctionView),
-            functionButton: Math.min(Number(ui.functionButton) || 600, cap.functionButton),
-            searchControls: Math.min(Number(ui.searchControls) || 900, cap.searchControls),
-            floatingButton: Math.min(Number(ui.floatingButton) || 1000, cap.floatingButton)
-        };
-        if (out.mainFunctionView <= out.backgroundCover) out.mainFunctionView = out.backgroundCover + 1;
-        if (out.functionButton <= out.mainFunctionView) out.functionButton = out.mainFunctionView + 1;
-        if (out.searchControls <= out.functionButton) out.searchControls = out.functionButton + 1;
-        if (out.floatingButton <= out.searchControls) out.floatingButton = out.searchControls + 1;
-        return out;
     }
 
 
@@ -195,12 +179,14 @@
     }
 
 
-    // 快捷/详细共用：列数 = floor(视口宽/720)，至少 1 列，至多 8 列
-    function applyQfCols() {
+    // AHL/详细共用：列数按不同阈值计算
+    function ahlColsWidth() {
         if (!document.documentElement) return;
         const w = window.innerWidth || 1200;
-        const cols = Math.max(1, Math.min(8, Math.floor(w / 720)));
-        document.documentElement.style.setProperty('--tmk-qf-cols', String(cols));
+        const qfCols = Math.max(1, Math.min(8, Math.floor(w / 720)));
+        const fsCols = Math.max(1, Math.min(8, Math.floor(w / 360)));
+        document.documentElement.style.setProperty('--tmk-qf-cols', String(qfCols));
+        document.documentElement.style.setProperty('--tmk-fs-cols', String(fsCols));
     }
 
 
@@ -288,7 +274,7 @@
         if (!document.documentElement) return;
         document.documentElement.style.setProperty('--tmk-left-gap', `${calcLeftGap()}px`);
         applyTmkTileVars();
-        applyQfCols();
+        ahlColsWidth();
         applyNarrowShellVars();
         syncThemeVarsFromUi();
     }
@@ -447,22 +433,98 @@
     }
 
 
-    // 功能：绑定镜像详细页折叠面板交互。
-    function bindMirrorDetailPanels(mirror) {
-        if (!mirror) return;
-        mirror.querySelectorAll('.tmk-pnr-fs-toggle').forEach(function(toggle) {
-            if (toggle.getAttribute('data-tmk-mirror-bound') === '1') return;
-            toggle.setAttribute('data-tmk-mirror-bound', '1');
+    function buildStep2Schema(sourceRoot) {
+        const groups = [];
+        const fieldsets = Array.from(sourceRoot.querySelectorAll('fieldset')).slice(0, 5);
+        fieldsets.forEach(function(fs, idx) {
+            const legend = fs.querySelector('legend');
+            const title = legend ? String(legend.textContent || '').replace(/\s+/g, ' ').trim() : '分组' + (idx + 1);
+            const fields = [];
+            const controls = collectBindableControls(fs);
+            controls.forEach(function(ctrl) {
+                let labelText = '';
+                const parentBlock = ctrl.closest('[class*="ui-block-"]');
+                if (parentBlock && parentBlock.previousElementSibling) {
+                    labelText = String(parentBlock.previousElementSibling.textContent || '').replace(/\s+/g, ' ').trim();
+                } else if (ctrl.parentElement && ctrl.parentElement.previousElementSibling) {
+                    labelText = String(ctrl.parentElement.previousElementSibling.textContent || '').replace(/\s+/g, ' ').trim();
+                }
+                if (!labelText) {
+                    labelText = String(ctrl.getAttribute('data-name') || ctrl.getAttribute('placeholder') || ctrl.name || '').trim();
+                }
+                let explicitLabel = '';
+                if (ctrl.id) {
+                    const labelEl = fs.querySelector('label[for="' + ctrl.id + '"]');
+                    if (labelEl) {
+                        explicitLabel = String(labelEl.textContent || '').replace(/\s+/g, ' ').trim();
+                    }
+                }
+                if (explicitLabel) labelText = explicitLabel;
+                if (!labelText && ctrl.type === 'button') labelText = ctrl.value || '操作';
+
+                fields.push({
+                    label: labelText,
+                    sourceControl: ctrl
+                });
+            });
+            groups.push({
+                title: title,
+                fields: fields,
+                collapsed: idx > 0
+            });
+        });
+        return groups;
+    }
+
+
+    function renderStep2Overlay(sourceRoot, mirrorRoot) {
+        const groups = buildStep2Schema(sourceRoot);
+        const overlay = document.createElement('div');
+        overlay.className = STEP2_OVERLAY_CLASS;
+        groups.forEach(function(g) {
+            const panel = document.createElement('div');
+            panel.className = STEP2_GROUP_CLASS + (g.collapsed ? ' is-collapsed' : '');
+            
+            const toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = STEP2_GROUP_TITLE_CLASS;
+            toggle.textContent = g.title + '  ▾';
             toggle.addEventListener('click', function() {
-                const panel = toggle.closest('.tmk-pnr-fs-panel');
-                if (!panel) return;
                 const wasCollapsed = panel.classList.contains('is-collapsed');
-                mirror.querySelectorAll('.tmk-pnr-fs-panel').forEach(function(p) {
+                overlay.querySelectorAll('.' + STEP2_GROUP_CLASS).forEach(function(p) {
                     p.classList.add('is-collapsed');
                 });
                 if (wasCollapsed) panel.classList.remove('is-collapsed');
             });
+            
+            const body = document.createElement('div');
+            body.className = STEP2_GROUP_FIELDS_CLASS;
+            
+            g.fields.forEach(function(f) {
+                const fieldWrap = document.createElement('div');
+                fieldWrap.className = STEP2_FIELD_CLASS;
+                if (f.sourceControl.tagName.toLowerCase() === 'textarea') {
+                    fieldWrap.classList.add(STEP2_FIELD_WIDE_CLASS);
+                }
+                
+                const label = document.createElement('label');
+                label.className = STEP2_FIELD_LABEL_CLASS;
+                label.textContent = f.label;
+                
+                const clonedCtrl = f.sourceControl.cloneNode(true);
+                removeIdsFromCloneTree(clonedCtrl);
+                
+                // 去除了 tmk-pnr-fs-control 的包裹，直接 append
+                fieldWrap.appendChild(label);
+                fieldWrap.appendChild(clonedCtrl);
+                body.appendChild(fieldWrap);
+            });
+            
+            panel.appendChild(toggle);
+            panel.appendChild(body);
+            overlay.appendChild(panel);
         });
+        mirrorRoot.appendChild(overlay);
     }
 
 
@@ -479,11 +541,13 @@
             state.mirrorPageRefs[pageNo] = mirror;
         }
         mirror.innerHTML = '';
-        const clone = source.cloneNode(true);
-        removeIdsFromCloneTree(clone);
-        if (Number(pageNo) === 1) decorateMirrorDetailPage(clone);
-        mirror.appendChild(clone);
-        if (Number(pageNo) === 1) bindMirrorDetailPanels(mirror);
+        if (Number(pageNo) === STEP2_PAGE_NO) {
+            renderStep2Overlay(source, mirror);
+        } else {
+            const clone = source.cloneNode(true);
+            removeIdsFromCloneTree(clone);
+            mirror.appendChild(clone);
+        }
         bindMirrorControls(pageNo, source, mirror);
         syncMirrorFromSource(pageNo);
     }
@@ -837,7 +901,7 @@
 
     function bindQuickUppercase(el) {
         if (!el) return;
-        if (el.id === 'tmk-lostform-v2-qf-nw') return;
+        if (el.id === 'tmk-pnr-qf-nw') return;
         function up() {
             const u = el.value.toUpperCase();
             if (u !== el.value) el.value = u;
@@ -849,6 +913,7 @@
 
     function cleanRawLabelText(raw) {
         return String(raw || '')
+            .replace(/[\x00-\x1F\x7F-\x9F]/g, '')
             .replace(/[0-9]/g, '')
             .replace(/\*/g, ' ')
             .replace(/\s+/g, ' ')
@@ -970,14 +1035,14 @@
         const paInput = pickBaseInput(['#content_1 textarea[name*="foreverAddr"]', '#content_1 input[name*="foreverAddr"]', '#content_1 input[name*="fAddress"]']);
         const familyInput = pickBaseInput(['#content_1 input[name="lbDetail.foreverTel"]', '#content_1 input[name*="familyPhone"]', '#content_1 input[name*="fTelNum"]', '#content_1 input[name*="homePhone"]']);
         const cpInput = pickBaseInput(['#content_1 input[name="lbDetail.phone"]', '#content_1 input[name*="mobile"]', '#content_1 input[name*="cell"]', '#content_1 input[name*="cp"]']);
-        applyQuickLabelText('tmk-lostform-v2-qf-label-nmgn', normalizeLabelFromRawList(nmgnRaw));
-        applyQuickLabelText('tmk-lostform-v2-qf-label-tn', normalizeLabelFromRawList([getRawLabelByInput(tnInput)]));
-        applyQuickLabelText('tmk-lostform-v2-qf-label-ct', normalizeLabelFromRawList([getRawLabelByInput(ctInput)]));
-        applyQuickLabelText('tmk-lostform-v2-qf-label-nw', normalizeLabelFromRawList([getRawLabelByInput(nwInput)]));
-        applyQuickLabelText('tmk-lostform-v2-qf-label-pa', normalizeLabelFromRawList([getRawLabelByInput(paInput)]));
+        applyQuickLabelText('tmk-pnr-qf-label-nmgn', normalizeLabelFromRawList(nmgnRaw));
+        applyQuickLabelText('tmk-pnr-qf-label-tn', normalizeLabelFromRawList([getRawLabelByInput(tnInput)]));
+        applyQuickLabelText('tmk-pnr-qf-label-ct', normalizeLabelFromRawList([getRawLabelByInput(ctInput)]));
+        applyQuickLabelText('tmk-pnr-qf-label-nw', normalizeLabelFromRawList([getRawLabelByInput(nwInput)]));
+        applyQuickLabelText('tmk-pnr-qf-label-pa', normalizeLabelFromRawList([getRawLabelByInput(paInput)]));
         const familyLabel = normalizeLabelFromRawList([getRawLabelByInput(familyInput)]);
-        applyQuickLabelText('tmk-lostform-v2-qf-label-family', familyLabel || '家庭电话 PN');
-        applyQuickLabelText('tmk-lostform-v2-qf-label-cp', normalizeLabelFromRawList([getRawLabelByInput(cpInput)]));
+        applyQuickLabelText('tmk-pnr-qf-label-family', familyLabel || '家庭电话 PN');
+        applyQuickLabelText('tmk-pnr-qf-label-cp', normalizeLabelFromRawList([getRawLabelByInput(cpInput)]));
     }
 
 
@@ -1006,9 +1071,9 @@
 
 
     function normalizeQuickTextboxWidths() {
-        const quick = document.getElementById('tmk-lostform-v2-quick');
+        const quick = document.getElementById('tmk-pnr-quick');
         if (!quick) return;
-        const grid = quick.querySelector('.tmk-lostform-v2-qf-grid');
+        const grid = quick.querySelector('.tmk-pnr-qf-grid');
         normalizeTextboxWidthsInContainer(grid || quick);
     }
 
@@ -1041,7 +1106,7 @@
     }
 
 
-    // 功能：读取快捷页输入框引用。
+    // 功能：读取AHL页输入框引用。
     function getQuickInputs() {
         return {
             nmgn: document.getElementById('tmk-pnr-qf-nmgn'),
@@ -1086,7 +1151,7 @@
     }
 
 
-    // 复用基页“完成”按钮的校验逻辑：在快捷页点击预览时同步触发一次
+    // 复用基页“完成”按钮的校验逻辑：在AHL页点击预览时同步触发一次
     function runBaseFinishValidation() {
         const finish = document.getElementById('finish');
         if (!finish) return { ok: true };
@@ -1200,7 +1265,7 @@
                 return { ok: false, message: '无法触发新增按钮。', field: 'tn' };
             }
         }
-        return { ok: true, message: '快捷填充完成。' };
+        return { ok: true, message: 'AHL填充完成。' };
     }
 
 
@@ -1244,7 +1309,7 @@
         const qi = getQuickInputs();
         const nmgnFromRefs = buildNmGnDisplayFromRefs(refs);
         const tnFromRefs = buildTnStringFromRefs(refs);
-        // 仅在基页有有效值时回填，避免失焦后把快捷区已有内容清空或污染
+        // 仅在基页有有效值时回填，避免失焦后把AHL区已有内容清空或污染
         if (qi.nmgn && !qi.nmgn.matches(':focus') && nmgnFromRefs) qi.nmgn.value = nmgnFromRefs;
         if (qi.tn && !qi.tn.matches(':focus') && tnFromRefs) qi.tn.value = tnFromRefs;
         if (qi.nw && !qi.nw.matches(':focus') && refs.bwInput && refs.bwInput.value) {
@@ -1281,7 +1346,7 @@
     // 功能：注入覆盖层专用样式（不改动原网页元素）。
     function injectStyles() {
         if (document.getElementById(STYLE_ID)) return;
-        const z = getV2ZLayers();
+        const z = getSharedZLayers();
         const style = document.createElement('style');
         style.id = STYLE_ID;
         style.textContent = [
@@ -1345,7 +1410,7 @@
             '  right: var(--tmk-pnr-shell-right, 24px);',
             '  top: 72px;',
             '  bottom: auto;',
-            '  z-index: ' + z.floatingButton + ';',
+            '  z-index: ' + z.mainFunctionView + ';',
             '  padding: 6px 12px 8px;',
             '  box-sizing: border-box;',
             '  background: transparent;',
@@ -1468,7 +1533,7 @@
             '  width: 100%;',
             '  box-sizing: border-box;',
             '}',
-            '#tmk-pnr-quick .tmk-pnr-qf-field {',
+            '.tmk-pnr-field {',
             '  display: flex;',
             '  flex-direction: row;',
             '  align-items: center;',
@@ -1478,10 +1543,10 @@
             '  width: 100%;',
             '  box-sizing: border-box;',
             '}',
-            '#tmk-pnr-quick .tmk-pnr-qf-field .tmk-pnr-qf-label {',
+            '.tmk-pnr-field .tmk-pnr-label {',
             '  margin-top: 0;',
             '}',
-            '#tmk-pnr-quick .tmk-pnr-qf-label {',
+            '.tmk-pnr-label {',
             '  font-size: 18px;',
             '  color: var(--tmk-c-major-font);',
             '  display: block;',
@@ -1492,7 +1557,7 @@
             '  text-overflow: clip;',
             '  line-height: 1.3;',
             '}',
-            '#tmk-pnr-quick input {',
+            '.tmk-pnr-field input, .tmk-pnr-field select, .tmk-pnr-field textarea {',
             '  flex: 1 1 auto;',
             '  min-width: 0;',
             '  min-height: 42px;',
@@ -1505,10 +1570,10 @@
             '  box-sizing: border-box;',
             '  font-size: 20px;',
             '}',
-            '#tmk-pnr-quick input::placeholder {',
+            '.tmk-pnr-field input::placeholder, .tmk-pnr-field textarea::placeholder {',
             '  color: color-mix(in srgb, var(--tmk-c-minor-focus) 50%, transparent) !important;',
             '}',
-            '#tmk-pnr-quick input:focus {',
+            '.tmk-pnr-field input:focus, .tmk-pnr-field select:focus, .tmk-pnr-field textarea:focus {',
             '  border-bottom-color: var(--tmk-c-major-focus);',
             '  outline: none;',
             '  box-shadow: none;',
@@ -1626,20 +1691,14 @@
             'html.' + MODE_CLASS + ' #' + DETAIL_QUICK_FILL_FAB_ID + '.tmk-pnr-qf-fab-detail--on {',
             '  display: inline-flex !important;',
             '}',
-            '#tmk-pnr-qf-hint {',
-            '  font-size: 17px;',
-            '  color: var(--tmk-c-minor-button);',
-            '  margin-top: 9px;',
-            '  line-height: 1.35;',
-            '}',
-            '#tmk-pnr-sub36 {',
+            '#' + INFO_STAGE_ID + ' {',
             '  display: none;',
             '  margin-top: 8px;',
             '  flex-wrap: wrap;',
             '  gap: 6px;',
             '}',
-            '#tmk-pnr-sub36.tmk-pnr-sub--on { display: flex !important; }',
-            '.tmk-pnr-sub-btn {',
+            '#' + INFO_STAGE_ID + '.tmk-pnr-info-stage--on { display: flex !important; }',
+            '.' + INFO_STAGE_BTN_CLASS + ' {',
             '  padding: 4px 8px;',
             '  font-size: 12px;',
             '  border: 1px solid var(--tmk-c-search-input-border);',
@@ -1648,7 +1707,7 @@
             '  color: var(--tmk-c-major-font);',
             '  cursor: pointer;',
             '}',
-            '.tmk-pnr-sub-btn.is-active {',
+            '.' + INFO_STAGE_BTN_CLASS + '.is-active {',
             '  background: var(--tmk-c-major-focus);',
             '  border-color: var(--tmk-c-major-focus);',
             '  color: var(--tmk-c-lv1-fg);',
@@ -1669,144 +1728,46 @@
             'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + ' .ui-content {',
             '  background: transparent !important;',
             '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-panel {',
-            '  margin: 12px var(--tmk-pnr-c1-panel-mx, 15px);',
-            '  width: calc(100% - 2 * var(--tmk-pnr-c1-panel-mx, 15px));',
-            '  max-width: none;',
+            'html.' + MODE_CLASS + ' .' + STEP2_OVERLAY_CLASS + ' {',
+            '  padding: 12px var(--tmk-pnr-c1-panel-mx, 15px);',
+            '  width: 100%;',
             '  box-sizing: border-box;',
+            '}',
+            'html.' + MODE_CLASS + ' .' + STEP2_GROUP_CLASS + ' {',
+            '  margin-bottom: 12px;',
             '  border: 1px solid var(--tmk-c-search-input-border);',
             '  border-radius: 10px;',
             '  overflow: hidden;',
             '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-toggle {',
+            'html.' + MODE_CLASS + ' .' + STEP2_GROUP_TITLE_CLASS + ' {',
             '  display: block;',
             '  width: 100%;',
-            '  min-height: 66px;',
+            '  min-height: 48px;',
             '  text-align: left;',
             '  border: 0;',
-            '  border-bottom: 2px solid var(--tmk-c-search-input-border);',
+            '  border-bottom: 1px solid var(--tmk-c-search-input-border);',
             '  background: var(--tmk-c-major-button);',
-            '  font-size: 20px;',
+            '  font-size: 18px;',
             '  font-weight: 600;',
-            '  padding: 10px 2px;',
+            '  padding: 10px 16px;',
             '  cursor: pointer;',
             '  box-sizing: border-box;',
             '  color: var(--tmk-c-major-font);',
             '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body {',
-            '  padding: 12px 0;',
-            '  border-top: 1px solid var(--tmk-c-search-input-border);',
-            '  overflow-x: auto;',
-            '  max-width: 100%;',
-            '  min-width: 0;',
-            '  box-sizing: border-box;',
+            'html.' + MODE_CLASS + ' .' + STEP2_GROUP_CLASS + '.is-collapsed .' + STEP2_GROUP_TITLE_CLASS + ' {',
+            '  border-bottom: 0;',
             '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body > fieldset {',
-            '  width: 720px !important;',
-            '  max-width: 720px !important;',
-            '  min-width: 720px !important;',
-            '  margin: 0 !important;',
+            'html.' + MODE_CLASS + ' .' + STEP2_GROUP_FIELDS_CLASS + ' {',
+            '  padding: 16px;',
+            '  display: grid;',
+            '  grid-template-columns: repeat(var(--tmk-fs-cols, 2), minmax(0, 1fr));',
+            '  gap: 16px;',
             '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-panel.is-collapsed .tmk-pnr-fs-body {',
-            '  display: none !important;',
+            'html.' + MODE_CLASS + ' .' + STEP2_GROUP_CLASS + '.is-collapsed .' + STEP2_GROUP_FIELDS_CLASS + ' {',
+            '  display: none;',
             '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body > fieldset > legend {',
-            '  display: none !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-c1-hide,',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .ui-grid-b.l_low {',
-            '  display: none !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-a {',
-            '  display: grid !important;',
-            '  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;',
-            '  align-items: start !important;',
-            '  column-gap: 0 !important;',
-            '  row-gap: 8px !important;',
-            '  width: 720px !important;',
-            '  max-width: 720px !important;',
-            '  min-width: 720px !important;',
-            '  box-sizing: border-box !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-a > [class*="ui-block-"] {',
-            '  width: 100% !important;',
-            '  max-width: 360px !important;',
-            '  min-width: 0 !important;',
-            '  box-sizing: border-box !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-a.l_row,',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-b.l_row,',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-c.l_row,',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-d.l_row {',
-            '  display: flex !important;',
-            '  flex-wrap: wrap !important;',
-            '  align-items: flex-start !important;',
-            '  width: 720px !important;',
-            '  max-width: 720px !important;',
-            '  min-width: 720px !important;',
-            '  box-sizing: border-box !important;',
-            '  margin: 0 !important;',
-            '  padding: 0 !important;',
-            '  gap: 0 !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-a.l_row > [class*="ui-block-"],',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-b.l_row > [class*="ui-block-"],',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-c.l_row > [class*="ui-block-"],',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-d.l_row > [class*="ui-block-"] {',
-            '  flex: 0 0 360px !important;',
-            '  width: 360px !important;',
-            '  max-width: 360px !important;',
-            '  min-width: 0 !important;',
-            '  float: none !important;',
-            '  box-sizing: border-box !important;',
-            '  margin: 0 !important;',
-            '  padding: 0 !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-a.l_row > [class*="ui-block-"] .ui-grid-a,',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-b.l_row > [class*="ui-block-"] .ui-grid-a,',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-c.l_row > [class*="ui-block-"] .ui-grid-a,',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body .ui-grid-d.l_row > [class*="ui-block-"] .ui-grid-a {',
-            '  width: 100% !important;',
-            '  max-width: 100% !important;',
-            '  min-width: 0 !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .ui-block-c > .ui-grid-b {',
-            '  display: grid !important;',
-            '  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;',
-            '  align-items: start !important;',
-            '  column-gap: 0 !important;',
-            '  row-gap: 8px !important;',
-            '  width: min(100%, 720px) !important;',
-            '  max-width: 720px !important;',
-            '  min-width: 0 !important;',
-            '  box-sizing: border-box !important;',
-            '  float: none !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .ui-block-c > .ui-grid-b > [class*="ui-block-"] {',
-            '  width: 100% !important;',
-            '  max-width: 360px !important;',
-            '  min-width: 0 !important;',
-            '  float: none !important;',
-            '  box-sizing: border-box !important;',
-            '}',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]),',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body input:not([type]),',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body select,',
-            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '[data-tmk-mirror-page="1"] .tmk-pnr-fs-body textarea {',
-            '  width: 100% !important;',
-            '  max-width: 100% !important;',
-            '  min-width: 0 !important;',
-            '  min-height: 42px !important;',
-            '  border: 0 !important;',
-            '  border-bottom: 2px solid var(--tmk-c-search-input-border) !important;',
-            '  border-radius: 0 !important;',
-            '  background: transparent !important;',
-            '  color: var(--tmk-c-major-font) !important;',
-            '  font-size: 20px !important;',
-            '  line-height: 1.35 !important;',
-            '  box-sizing: border-box !important;',
-            '  box-shadow: none !important;',
-            '  outline: none !important;',
+            'html.' + MODE_CLASS + ' .' + STEP2_FIELD_WIDE_CLASS + ' {',
+            '  grid-column: 1 / -1;',
             '}',
             '#' + TOOLBAR_ID + '.tmk-ui-hidden,',
             '#' + STEPPER_BAR_ID + '.tmk-ui-hidden,',
@@ -1866,7 +1827,7 @@
     // 功能：生成覆盖层步骤条HTML。
     function buildStepperHtml() {
         const steps = [
-            { id: 'tmk-pnr-s1', value: '1', label: '快捷' },
+            { id: 'tmk-pnr-s1', value: '1', label: 'AHL' },
             { id: 'tmk-pnr-s2', value: '2', label: '详细' },
             { id: 'tmk-pnr-s3', value: '3', label: '信息' },
             { id: 'tmk-pnr-s4', value: '4', label: '追踪' }
@@ -1892,47 +1853,45 @@
     }
 
 
-    // 功能：生成快捷页HTML骨架。
+    // 功能：生成AHL页HTML骨架。
     function buildQuickHtml() {
         return (
             '<div id="tmk-pnr-quick" class="tmk-pnr-quick--pending">' +
             '<p id="tmk-pnr-qf-loading" class="tmk-pnr-qf-loading">正在等待详细页字段加载...</p>' +
-            '<p class="tmk-pnr-qf-title">完成前快捷填充</p>' +
+            '<p class="tmk-pnr-qf-title">WT AHL</p>' +
             '<div class="tmk-pnr-qf-grid">' +
-            '<div class="tmk-pnr-qf-field">' +
-            '<label id="tmk-pnr-qf-label-nmgn" class="tmk-pnr-qf-label" for="tmk-pnr-qf-nmgn">NMs/GNs</label>' +
+            '<div class="tmk-pnr-field">' +
+            '<label id="tmk-pnr-qf-label-nmgn" class="tmk-pnr-label" for="tmk-pnr-qf-nmgn">NMs/GNs</label>' +
             '<input id="tmk-pnr-qf-nmgn" type="text" placeholder="LIU/GOSTNORT/LIANG/GORDON" autocomplete="off" />' +
             '</div>' +
-            '<div class="tmk-pnr-qf-field">' +
-            '<label id="tmk-pnr-qf-label-tn" class="tmk-pnr-qf-label" for="tmk-pnr-qf-tn">TNs</label>' +
+            '<div class="tmk-pnr-field">' +
+            '<label id="tmk-pnr-qf-label-tn" class="tmk-pnr-label" for="tmk-pnr-qf-tn">TNs</label>' +
             '<input id="tmk-pnr-qf-tn" type="text" placeholder="CA654321/CA123456" autocomplete="off" />' +
             '</div>' +
-            '<div class="tmk-pnr-qf-field">' +
-            '<label id="tmk-pnr-qf-label-ct" class="tmk-pnr-qf-label" for="tmk-pnr-qf-ct">CTs</label>' +
+            '<div class="tmk-pnr-field">' +
+            '<label id="tmk-pnr-qf-label-ct" class="tmk-pnr-label" for="tmk-pnr-qf-ct">CTs</label>' +
             '<input id="tmk-pnr-qf-ct" type="text" placeholder="BK22RHW/RD01XXX" autocomplete="off" />' +
             '</div>' +
-            '<div class="tmk-pnr-qf-field">' +
-            '<label id="tmk-pnr-qf-label-nw" class="tmk-pnr-qf-label" for="tmk-pnr-qf-nw">NW</label>' +
+            '<div class="tmk-pnr-field">' +
+            '<label id="tmk-pnr-qf-label-nw" class="tmk-pnr-label" for="tmk-pnr-qf-nw">NW</label>' +
             '<input id="tmk-pnr-qf-nw" type="text" inputmode="numeric" autocomplete="off" />' +
             '</div>' +
-            '<div class="tmk-pnr-qf-field">' +
-            '<label id="tmk-pnr-qf-label-pa" class="tmk-pnr-qf-label" for="tmk-pnr-qf-pa">PA</label>' +
+            '<div class="tmk-pnr-field">' +
+            '<label id="tmk-pnr-qf-label-pa" class="tmk-pnr-label" for="tmk-pnr-qf-pa">PA</label>' +
             '<input id="tmk-pnr-qf-pa" type="text" placeholder="123 MAIN ST, LA, CA 90001" autocomplete="off" />' +
             '</div>' +
-            '<div class="tmk-pnr-qf-field">' +
-            '<label id="tmk-pnr-qf-label-family" class="tmk-pnr-qf-label" for="tmk-pnr-qf-family">PN</label>' +
+            '<div class="tmk-pnr-field">' +
+            '<label id="tmk-pnr-qf-label-family" class="tmk-pnr-label" for="tmk-pnr-qf-family">PN</label>' +
             '<input id="tmk-pnr-qf-family" type="text" placeholder="数字" autocomplete="off" />' +
             '</div>' +
-            '<div class="tmk-pnr-qf-field">' +
-            '<label id="tmk-pnr-qf-label-cp" class="tmk-pnr-qf-label" for="tmk-pnr-qf-cp">CP</label>' +
+            '<div class="tmk-pnr-field">' +
+            '<label id="tmk-pnr-qf-label-cp" class="tmk-pnr-label" for="tmk-pnr-qf-cp">CP</label>' +
             '<input id="tmk-pnr-qf-cp" type="text" value="' + DEFAULT_CP + '" autocomplete="off" />' +
             '</div>' +
             '<div id="' + PREVIEW_SLOT_ID + '"></div>' +
             '<div id="' + ACTION_BAR_ID + '"></div>' +
             '</div>' +
-            '<div id="tmk-pnr-qf-hint">颜色类型 CT 段数须等于行李牌 TN 数量；NW 总件数须等于 TN 数量。CP 下方「预览」校验并写入后进入「详细」；右侧浮动钮与网页「新增」一致，校验写入后触发新增。</div>' +
-            '</div>' +
-            '<div id="tmk-pnr-sub36" aria-label="子区块"></div>'
+            '<div id="' + INFO_STAGE_ID + '" aria-label="子区块"></div>'
         );
     }
 
@@ -1943,54 +1902,23 @@
     }
 
 
-    // 功能：装饰镜像详细页（分组折叠与首行隐藏）。
-    function decorateMirrorDetailPage(mirrorRoot) {
-        if (!mirrorRoot) return;
-        const childs = Array.from(mirrorRoot.children);
-        for (let i = 0; i < childs.length; i += 1) {
-            const el = childs[i];
-            if (el.tagName === 'FIELDSET') break;
-            if (el.classList && el.classList.contains('ui-grid-b') && el.classList.contains('l_row')) {
-                el.classList.add('tmk-pnr-c1-hide');
-                break;
-            }
-        }
-        const fieldsets = Array.from(mirrorRoot.querySelectorAll('fieldset')).slice(0, 5);
-        fieldsets.forEach(function(fs, idx) {
-            if (!fs || fs.closest('.tmk-pnr-fs-panel')) return;
-            const legend = fs.querySelector('legend');
-            const title = legend ? String(legend.textContent || '').replace(/\s+/g, ' ').trim() : '';
-            const panel = document.createElement('div');
-            panel.className = 'tmk-pnr-fs-panel' + (idx === 0 ? '' : ' is-collapsed');
-            const toggle = document.createElement('button');
-            toggle.type = 'button';
-            toggle.className = 'tmk-pnr-fs-toggle';
-            toggle.textContent = (title || '分组' + (idx + 1)) + '  ▾';
-            const body = document.createElement('div');
-            body.className = 'tmk-pnr-fs-body';
-            fs.parentNode.insertBefore(panel, fs);
-            panel.appendChild(toggle);
-            panel.appendChild(body);
-            body.appendChild(fs);
-        });
-    }
 
 
     // 功能：构建信息页子区块切换按钮。
-    function buildSub36Buttons() {
-        const wrap = document.getElementById('tmk-pnr-sub36');
+    function buildInfoStageButtons() {
+        const wrap = document.getElementById(INFO_STAGE_ID);
         if (!wrap) return;
         wrap.innerHTML = '';
         [2, 3, 4, 5, 6].forEach(function(n) {
             const b = document.createElement('button');
             b.type = 'button';
-            b.className = 'tmk-pnr-sub-btn' + (state.subStep36 === n ? ' is-active' : '');
+            b.className = INFO_STAGE_BTN_CLASS + (state.infoStep === n ? ' is-active' : '');
             b.textContent = '区块' + n;
-            b.setAttribute('data-tmk-sub', String(n));
+            b.setAttribute('data-tmk-info-stage', String(n));
             b.addEventListener('click', function() {
-                state.subStep36 = n;
-                wrap.querySelectorAll('.tmk-pnr-sub-btn').forEach(function(x) {
-                    x.classList.toggle('is-active', x.getAttribute('data-tmk-sub') === String(n));
+                state.infoStep = n;
+                wrap.querySelectorAll('.' + INFO_STAGE_BTN_CLASS).forEach(function(x) {
+                    x.classList.toggle('is-active', x.getAttribute('data-tmk-info-stage') === String(n));
                 });
                 applyPaneVisibility();
             });
@@ -2019,13 +1947,13 @@
     function applyPaneVisibility() {
         const shell = document.getElementById(SHELL_ID);
         const quick = document.getElementById('tmk-pnr-quick');
-        const sub36 = document.getElementById('tmk-pnr-sub36');
+        const infoStage = document.getElementById(INFO_STAGE_ID);
         if (!state.uiVisible) {
             if (shell) shell.classList.remove('tmk-pnr-shell--quick');
             const stageHidden = document.getElementById(STAGE_ID);
             if (stageHidden) stageHidden.classList.remove('tmk-pnr-stage--on');
             if (quick) quick.style.display = 'none';
-            if (sub36) sub36.classList.remove('tmk-pnr-sub--on');
+            if (infoStage) infoStage.classList.remove('tmk-pnr-info-stage--on');
             updateNativeNavUi();
             updateQuickFillFab();
             return;
@@ -2035,11 +1963,11 @@
         const stageEl = document.getElementById(STAGE_ID);
         if (stageEl) stageEl.classList.toggle('tmk-pnr-stage--on', state.mainStep === 2 || state.mainStep === 3 || state.mainStep === 4);
         if (quick) quick.style.display = state.mainStep === 1 ? 'block' : 'none';
-        if (sub36) {
-            sub36.classList.toggle('tmk-pnr-sub--on', state.mainStep === 3);
+        if (infoStage) {
+            infoStage.classList.toggle('tmk-pnr-info-stage--on', state.mainStep === 3);
             if (state.mainStep === 3) {
-                sub36.querySelectorAll('.tmk-pnr-sub-btn').forEach(function(x) {
-                    x.classList.toggle('is-active', x.getAttribute('data-tmk-sub') === String(state.subStep36));
+                infoStage.querySelectorAll('.' + INFO_STAGE_BTN_CLASS).forEach(function(x) {
+                    x.classList.toggle('is-active', x.getAttribute('data-tmk-info-stage') === String(state.infoStep));
                 });
             }
         }
@@ -2051,8 +1979,8 @@
             syncMainContentActive('content_1');
             setActiveMirrorPage(1);
         } else if (state.mainStep === 3) {
-            syncMainContentActive('content_' + state.subStep36);
-            setActiveMirrorPage(state.subStep36);
+            syncMainContentActive('content_' + state.infoStep);
+            setActiveMirrorPage(state.infoStep);
         } else if (state.mainStep === 4) {
             syncMainContentActive('content_7');
             setActiveMirrorPage(7);
@@ -2070,7 +1998,7 @@
     }
 
 
-    // 功能：按当前步骤控制快捷/详细新增按钮显示。
+    // 功能：按当前步骤控制AHL/详细 “完成” 按钮显示。
     function updateQuickFillFab() {
         const fab = document.getElementById(QUICK_FILL_FAB_ID);
         const detailFab = document.getElementById(DETAIL_QUICK_FILL_FAB_ID);
@@ -2095,7 +2023,7 @@
     }
 
 
-    // 功能：绑定覆盖层步骤与快捷输入事件。
+    // 功能：绑定覆盖层步骤与AHL输入事件。
     function bindShellEvents() {
         document.querySelectorAll('input[name="tmk-pnr-step"]').forEach(function(r) {
             r.addEventListener('change', function() {
@@ -2168,7 +2096,7 @@
     }
 
 
-    // 功能：挂载详细页新增按钮到覆盖层舞台。
+    // 功能：挂载详细页“完成”按钮到覆盖层舞台。
     function mountDetailQuickFillFab() {
         let detailFab = document.getElementById(DETAIL_QUICK_FILL_FAB_ID);
         if (!detailFab) {
@@ -2176,9 +2104,8 @@
             detailFab.id = DETAIL_QUICK_FILL_FAB_ID;
             detailFab.type = 'button';
             detailFab.className = 'tmk-pnr-qf-action';
-            detailFab.setAttribute('title', '新增');
-            detailFab.setAttribute('aria-label', '新增');
-            detailFab.textContent = '新增';
+            detailFab.setAttribute('title', '完成');
+            detailFab.textContent = '新增AHL';
             detailFab.addEventListener('click', function() {
                 runFabSubmit();
             });
@@ -2214,8 +2141,7 @@
             fab.id = QUICK_FILL_FAB_ID;
             fab.type = 'button';
             fab.className = 'tmk-pnr-qf-action';
-            fab.setAttribute('title', '新增');
-            fab.setAttribute('aria-label', '新增');
+            fab.setAttribute('title', '颜色类型 CT 段数 = 行李牌 TN 数量；NW 总件数 = TN 数量。「预览」校验并写入后进入「详细」。');
             fab.textContent = '新增';
             fab.addEventListener('click', function() {
                 runFabSubmit();
@@ -2250,7 +2176,7 @@
         const detailFabEx = document.getElementById(DETAIL_QUICK_FILL_FAB_ID);
         const stageForFab = document.getElementById(STAGE_ID);
         if (detailFabEx && stageForFab && detailFabEx.parentNode !== stageForFab) stageForFab.appendChild(detailFabEx);
-        buildSub36Buttons();
+        buildInfoStageButtons();
         bindShellEvents();
         syncRadiosFromState();
         applyPaneVisibility();

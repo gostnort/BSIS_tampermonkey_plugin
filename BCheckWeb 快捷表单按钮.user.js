@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         BCheckWeb 快捷表单按钮
+// @name         BCheckWeb AHL表单按钮
 // @namespace    http://tampermonkey.net/
 // @version      2.9.2
-// @description  原仓库文件名：BCheckWeb 按钮悬浮-2.8.user.js。新建少收查询第一步不克隆 l_search；离港结果 Step2 页不注入本悬浮框（与统合脚本壳层解耦）。其余页保留克隆与完成前快捷填充
+// @description  原仓库文件名：BCheckWeb 按钮悬浮-2.8.user.js。新建少收查询第一步不克隆 l_search；离港结果 Step2 页不注入本悬浮框（与统合脚本壳层解耦）。其余页保留克隆与完成前AHL填充
 // @author       Gostnort & Gemini
 // @match        http://60.247.100.98/BCheckWeb/*
 // @match        http://202.96.17.98/BCheckWeb/*
@@ -141,7 +141,7 @@
     const quickPanel = document.createElement('div');
     quickPanel.id = 'quick-fill-panel';
     quickPanel.innerHTML = `
-        <p class="qf-title">完成前快捷填充</p>
+        <p class="qf-title">完成前AHL填充</p>
         <label class="qf-label" for="qf-ct">CT（用 / 分隔）</label>
         <input id="qf-ct" type="text" placeholder="BK22RHW/RD01XXX">
         <label class="qf-label" for="qf-pa">PA 永久地址</label>
@@ -396,7 +396,7 @@
             setInputValue(refs.familyInput, familyRaw);
         }
         if (refs.cpInput && !refs.cpInput.value.trim()) setInputValue(refs.cpInput, cpRaw || DEFAULT_CP);
-        return { ok: true, message: '快捷填充完成。' };
+        return { ok: true, message: 'AHL填充完成。' };
     }
 
 

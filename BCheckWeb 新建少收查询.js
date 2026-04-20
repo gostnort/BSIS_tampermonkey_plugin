@@ -39,13 +39,14 @@
         '324': 'SC'
     });
     const MONTH_EN3 = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    const BASE_Z = 0;
     const DEFAULT_Z_LAYERS = Object.freeze({
-        basePage: 0,
-        backgroundCover: 100,
-        mainFunctionView: 500,
-        functionButton: 600,
-        searchControls: 900,
-        floatingButton: 1000
+        basePage: BASE_Z + 0,
+        backgroundCover: BASE_Z + 1000,
+        mainFunctionView: BASE_Z + 5000,
+        functionButton: BASE_Z + 6000,
+        searchControls: BASE_Z + 9000,
+        floatingButton: BASE_Z + 10000
     });
     const THEME2_FALLBACK_COLORS = Object.freeze({
         overlayBackdrop: '0.4',
@@ -224,28 +225,9 @@
     }
 
 
+    // 与 BCheckWeb_UI publishZLayers 的 __tmkZLayers 一致；毛玻璃用 backgroundCover，其余交互控件用 mainFunctionView
     function getScopedZLayers() {
-        const ui = getSharedZLayers();
-        const cap = {
-            backgroundCover: 80,
-            mainFunctionView: 300,
-            functionButton: 320,
-            searchControls: 330,
-            floatingButton: 340
-        };
-        const out = {
-            basePage: 0,
-            backgroundCover: Math.min(Number(ui.backgroundCover) || 100, cap.backgroundCover),
-            mainFunctionView: Math.min(Number(ui.mainFunctionView) || 500, cap.mainFunctionView),
-            functionButton: Math.min(Number(ui.functionButton) || 600, cap.functionButton),
-            searchControls: Math.min(Number(ui.searchControls) || 900, cap.searchControls),
-            floatingButton: Math.min(Number(ui.floatingButton) || 1000, cap.floatingButton)
-        };
-        if (out.mainFunctionView <= out.backgroundCover) out.mainFunctionView = out.backgroundCover + 1;
-        if (out.functionButton <= out.mainFunctionView) out.functionButton = out.mainFunctionView + 1;
-        if (out.searchControls <= out.functionButton) out.searchControls = out.functionButton + 1;
-        if (out.floatingButton <= out.searchControls) out.floatingButton = out.searchControls + 1;
-        return out;
+        return getSharedZLayers();
     }
 
 
@@ -394,7 +376,7 @@
                 position: fixed;
                 top: 10px;
                 right: 12px;
-                z-index: ${z.floatingButton};
+                z-index: ${z.mainFunctionView};
                 display: inline-flex;
                 align-items: center;
                 gap: 6px;
