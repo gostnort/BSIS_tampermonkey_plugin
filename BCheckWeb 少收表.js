@@ -40,7 +40,6 @@
     const STEP2_FIELD_CONTROL_CLASS = 'tmk-pnr-fs-control';
     const MODE_CLASS = 'tmk-pnr-modern';
     const MIRROR_PAGE_CLASS = 'tmk-pnr-mirror-page';
-    const FORCE_CLOSE_VIEWS_KEY = 'tmk-force-close-views-ts';
     const DEFAULT_CP = '3102151188';
     const CT_PATTERN = /^[A-Z]{2}[0-9]{2}[A-Z]{3}$/;
     const DEFAULT_Z_LAYERS = Object.freeze({
@@ -62,8 +61,7 @@
         quickReady: false,
         detailSyncTimer: null,
         mirrorPageRefs: {},
-        mirrorControlPairs: {},
-        lastForceCloseTs: 0
+        mirrorControlPairs: {}
     };
     if (!PAGE_RE.test(String(window.location.href || ''))) return;
     if (!isContentFrame()) return;
@@ -88,22 +86,6 @@
         } catch (e) {}
         if (window.__tmkZLayers) return normalizeZLayers(window.__tmkZLayers);
         return normalizeZLayers(null);
-    }
-
-
-    function readForceCloseViewsTs() {
-        let ts = 0;
-        try {
-            if (window.top && Number.isFinite(Number(window.top.__tmkForceCloseViewsTs))) {
-                ts = Number(window.top.__tmkForceCloseViewsTs);
-            }
-        } catch (e) {}
-        try {
-            const raw = window.sessionStorage.getItem(FORCE_CLOSE_VIEWS_KEY);
-            const parsed = Number(raw);
-            if (Number.isFinite(parsed)) ts = Math.max(ts, parsed);
-        } catch (e) {}
-        return ts;
     }
 
 
@@ -1336,10 +1318,12 @@
 
     function startDetailSync() {
         if (state.detailSyncTimer) return;
-        state.detailSyncTimer = window.setInterval(function() {
+        const root = document.getElementById('content_1') || document.body;
+        state.detailSyncTimer = new MutationObserver(function() {
             if (!state.uiVisible || state.mainStep !== 1) return;
             syncQuickFromDetail();
-        }, 1200);
+        });
+        state.detailSyncTimer.observe(root, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['value'] });
     }
 
 
@@ -1356,40 +1340,30 @@
             'html.' + MODE_CLASS + ' #' + STAGE_ID + ' { display: none !important; }',
             'html.' + MODE_CLASS + ' #' + STAGE_ID + '.tmk-pnr-stage--on { display: block !important; }',
             'html.' + MODE_CLASS + ' #' + STEPPER_BAR_ID + ' { display: block !important; }',
-            '#' + GLASS_ID + ' {',
-            '  position: fixed;',
-            '  inset: 0;',
-            '  z-index: ' + z.backgroundCover + ';',
-            '  display: none;',
-            '  background: color-mix(in srgb, var(--tmk-c-minor-button) 40%, transparent);',
-            '  backdrop-filter: blur(12px);',
-            '  -webkit-backdrop-filter: blur(12px);',
-            '  pointer-events: none;',
-            '}',
             '#' + TOOLBAR_ID + ' {',
             '  position: fixed;',
-            '  top: 10px;',
-            '  right: 12px;',
+            '  top: var(--tmk-toolbar-top, 10px);',
+            '  right: var(--tmk-toolbar-right, 12px);',
             '  z-index: ' + z.floatingButton + ';',
             '  display: inline-flex;',
             '  align-items: center;',
-            '  gap: 4px;',
-            '  padding: 4px 6px;',
+            '  gap: var(--tmk-toolbar-gap, 6px);',
+            '  padding: var(--tmk-toolbar-padding, 5px);',
             '  border-radius: 999px;',
             '  background: var(--tmk-c-search-bg, var(--tmk-c-major-button));',
             '  border: 1px solid var(--tmk-c-search-input-border);',
-            '  box-shadow: none;',
+            '  box-shadow: 0 6px 16px rgba(23, 52, 86, 0.16);',
             '  backdrop-filter: blur(8px);',
             '  -webkit-backdrop-filter: blur(8px);',
             '}',
             '.tmk-pnr-tb-btn {',
-            '  min-height: 32px;',
-            '  padding: 0 14px;',
+            '  min-height: var(--tmk-toolbar-btn-min-height, 30px);',
+            '  padding: 0 var(--tmk-toolbar-btn-padding-x, 12px);',
             '  border-radius: 999px;',
-            '  border: 1px solid transparent;',
-            '  background: transparent;',
-            '  color: var(--tmk-c-search-input-fg, var(--tmk-c-major-font));',
-            '  font-size: 14px;',
+            '  border: 1px solid var(--tmk-c-search-input-border);',
+            '  background: var(--tmk-c-search-bg);',
+            '  color: var(--tmk-c-major-font);',
+            '  font-size: var(--tmk-toolbar-btn-font-size, 14px);',
             '  font-weight: 600;',
             '  cursor: pointer;',
             '  font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif;',
@@ -1437,12 +1411,12 @@
             '  overflow-y: auto;',
             '  box-sizing: border-box;',
             '  padding: var(--tmk-pnr-shell-pad-top, 10px) var(--tmk-pnr-shell-pad-x, 12px) calc(var(--tmk-pnr-shell-pad-bot, 14px) + var(--tmk-medium, 92px) * 0.382 + 18px) var(--tmk-pnr-shell-pad-x, 12px);',
-            '  background: color-mix(in srgb, var(--tmk-c-major-button) 12%, transparent);',
+            '  background: var(--tmk-c-search-bg);',
             '  border: 1px solid var(--tmk-c-search-input-border);',
             '  border-radius: 12px;',
-            '  backdrop-filter: none;',
-            '  -webkit-backdrop-filter: none;',
-            '  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);',
+            '  box-shadow: 0 6px 16px rgba(23, 52, 86, 0.16);',
+            '  backdrop-filter: blur(8px);',
+            '  -webkit-backdrop-filter: blur(8px);',
             '  pointer-events: auto;',
             '  color: var(--tmk-c-major-font);',
             '}',
@@ -1532,51 +1506,6 @@
             '  align-items: start;',
             '  width: 100%;',
             '  box-sizing: border-box;',
-            '}',
-            '.tmk-pnr-field {',
-            '  display: flex;',
-            '  flex-direction: row;',
-            '  align-items: center;',
-            '  gap: 10px;',
-            '  min-width: 0;',
-            '  max-width: none;',
-            '  width: 100%;',
-            '  box-sizing: border-box;',
-            '}',
-            '.tmk-pnr-field .tmk-pnr-label {',
-            '  margin-top: 0;',
-            '}',
-            '.tmk-pnr-label {',
-            '  font-size: 18px;',
-            '  color: var(--tmk-c-major-font);',
-            '  display: block;',
-            '  flex: 0 0 auto;',
-            '  max-width: none;',
-            '  white-space: normal;',
-            '  overflow: visible;',
-            '  text-overflow: clip;',
-            '  line-height: 1.3;',
-            '}',
-            '.tmk-pnr-field input, .tmk-pnr-field select, .tmk-pnr-field textarea {',
-            '  flex: 1 1 auto;',
-            '  min-width: 0;',
-            '  min-height: 42px;',
-            '  padding: 6px 2px;',
-            '  border: 0;',
-            '  border-bottom: 2px solid var(--tmk-c-search-input-border);',
-            '  border-radius: 0;',
-            '  background: transparent;',
-            '  color: var(--tmk-c-major-font);',
-            '  box-sizing: border-box;',
-            '  font-size: 20px;',
-            '}',
-            '.tmk-pnr-field input::placeholder, .tmk-pnr-field textarea::placeholder {',
-            '  color: color-mix(in srgb, var(--tmk-c-minor-focus) 50%, transparent) !important;',
-            '}',
-            '.tmk-pnr-field input:focus, .tmk-pnr-field select:focus, .tmk-pnr-field textarea:focus {',
-            '  border-bottom-color: var(--tmk-c-major-focus);',
-            '  outline: none;',
-            '  box-shadow: none;',
             '}',
             '#' + PREVIEW_SLOT_ID + ' {',
             '  display: none;',
@@ -1738,6 +1667,8 @@
             '  border: 1px solid var(--tmk-c-search-input-border);',
             '  border-radius: 10px;',
             '  overflow: hidden;',
+            '  background: var(--tmk-c-search-bg);',
+            '  box-shadow: 0 6px 16px rgba(23, 52, 86, 0.16);',
             '}',
             'html.' + MODE_CLASS + ' .' + STEP2_GROUP_TITLE_CLASS + ' {',
             '  display: block;',
@@ -1746,7 +1677,7 @@
             '  text-align: left;',
             '  border: 0;',
             '  border-bottom: 1px solid var(--tmk-c-search-input-border);',
-            '  background: var(--tmk-c-major-button);',
+            '  background: transparent;',
             '  font-size: 18px;',
             '  font-weight: 600;',
             '  padding: 10px 16px;',
@@ -1788,6 +1719,8 @@
         if (!el) {
             el = document.createElement('div');
             el.id = GLASS_ID;
+            el.className = 'tmk-glass-backdrop';
+            el.style.zIndex = getSharedZLayers().backgroundCover;
             document.body.appendChild(el);
         }
         state.glass = el;
@@ -2053,15 +1986,6 @@
     }
 
 
-    // 功能：读取全局关闭时间戳，仅做状态消费不切换视图。
-    function enforceUiGlobalControl() {
-        const forceTs = readForceCloseViewsTs();
-        if (forceTs > state.lastForceCloseTs) {
-            state.lastForceCloseTs = forceTs;
-        }
-    }
-
-
     // 功能：切换新UI显示状态（仅隐藏/显示覆盖层）。
     function setUiVisible(visible) {
         state.uiVisible = visible !== false;
@@ -2112,6 +2036,22 @@
         }
         const stageForFab = document.getElementById(STAGE_ID);
         if (stageForFab && detailFab.parentNode !== stageForFab) stageForFab.appendChild(detailFab);
+    }
+
+
+    function startQuickReadyObserver() {
+        if (isQuickDetailReady()) {
+            tryMarkQuickReady();
+            return;
+        }
+        const root = document.getElementById('content_1') || document.body;
+        const obs = new MutationObserver(function() {
+            if (isQuickDetailReady()) {
+                obs.disconnect();
+                tryMarkQuickReady();
+            }
+        });
+        obs.observe(root, { childList: true, subtree: true });
     }
 
 
@@ -2180,14 +2120,8 @@
         bindShellEvents();
         syncRadiosFromState();
         applyPaneVisibility();
-        state.lastForceCloseTs = readForceCloseViewsTs();
         setUiVisible(true);
-        window.setInterval(function() {
-            enforceUiGlobalControl();
-            tryMarkQuickReady();
-        }, 400);
-        setTimeout(tryMarkQuickReady, 0);
-        setTimeout(syncFabLabelFromDom, 500);
+        startQuickReadyObserver();
         setTimeout(syncThemeVarsFromUi, 0);
         window.addEventListener('resize', function() {
             applyLeftGap();
@@ -2196,7 +2130,6 @@
         });
         window.addEventListener('load', applyShellOffset);
         setTimeout(applyShellOffset, 100);
-        setTimeout(applyShellOffset, 600);
         return true;
     }
 

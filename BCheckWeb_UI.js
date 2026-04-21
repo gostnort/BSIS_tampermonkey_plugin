@@ -23,7 +23,6 @@
     const SEARCH_INPUT_ID = 'tmk-search-input';
     const PENDING_SEARCH_KEY = 'tmk-pending-search';
     const MODERN_LOST_QUERY_KEY = 'tmk-modern-lost-query-v2-launch';
-    const FORCE_CLOSE_VIEWS_KEY = 'tmk-force-close-views-ts';
     const ACCEPT_STATION_COMPANY_KEY = 'tmk-accept-station-company';
     const ACCEPT_STATION_INPUT_ID = 'tmk-accept-station-input';
     const DEFAULT_ACCEPT_STATION_COMPANY = 'LAXCA';
@@ -294,7 +293,7 @@
     // 定义处说明（供 renderTiles 等磁贴 onClick 调用链末尾引用）：
     // 本脚本仅在 top 或 id=content_frame 的 iframe 内运行；此处赋值的是「当前脚本所在 window」的 location。
     // 在 content_frame 场景下即整帧跳转到 url，效果等同用户直接在业务区打开该地址；url 通常来自 extractHref(menu_frame 里 a 标签) 的绝对路径。
-    // 典型顺序：先 matchMyViews / closeOtherViews / closeStartMenu，再调用本函数，避免菜单层仍打开或与友邻脚本状态不同步。
+    // 典型顺序：先 matchMyViews / closeStartMenu，再调用本函数，避免菜单层仍打开或与友邻脚本状态不同步。
     function navigateToContent(url) {
         if (url) window.location.href = url;
     }
@@ -305,21 +304,6 @@
             if (window.top) window.top.__tmkUiOverlayOpen = !!open;
         } catch (e) {}
         window.__tmkUiOverlayOpen = !!open;
-    }
-
-
-    // 定义处说明（供磁贴跳转前一步调用）：
-    // 将当前时间戳 ts 写入三处，形成跨帧、跨脚本的「请配合收起自绘视图」信号：（1）window.top.__tmkForceCloseViewsTs（2）本 window.__tmkForceCloseViewsTs（3）sessionStorage 键 FORCE_CLOSE_VIEWS_KEY（值为 ts 字符串，键名见文件顶部常量，与少收表/新建少收查询脚本内同名常量一致）。
-    // 友邻脚本通过 readForceCloseViewsTs 读取 top 与 sessionStorage 的较大值并与本地缓存比较（例如 BCheckWeb 少收表.js 的 enforceUiGlobalControl），在整页 navigate 之前先 bump 时间戳，可降低旧页覆盖层与新页叠在一起的概率。本函数不负责具体隐藏 DOM，只发信号。
-    function closeOtherViews() {
-        const ts = Date.now();
-        try {
-            if (window.top) window.top.__tmkForceCloseViewsTs = ts;
-        } catch (e) {}
-        window.__tmkForceCloseViewsTs = ts;
-        try {
-            window.sessionStorage.setItem(FORCE_CLOSE_VIEWS_KEY, String(ts));
-        } catch (e) {}
     }
 
 
@@ -438,6 +422,13 @@
                 --tmk-small: ${m.small}px; --tmk-medium: ${m.medium}px; --tmk-gap: ${m.gap}px;
                 --tmk-big-tile: ${m.bigTile}px;
                 --tmk-small-tile-h: ${m.smallTileH}px;
+                --tmk-toolbar-top: 10px;
+                --tmk-toolbar-right: 12px;
+                --tmk-toolbar-gap: 6px;
+                --tmk-toolbar-padding: 5px;
+                --tmk-toolbar-btn-min-height: 30px;
+                --tmk-toolbar-btn-padding-x: 12px;
+                --tmk-toolbar-btn-font-size: 14px;
                 ${zLayerCssVarFromKey('basePage')}: ${z.basePage};
                 ${zLayerCssVarFromKey('backgroundCover')}: ${z.backgroundCover};
                 ${zLayerCssVarFromKey('mainFunctionView')}: ${z.mainFunctionView};
@@ -601,6 +592,64 @@
             .tmk-lv4 { background: var(${themeColorVarFromKey('lv4Bg')}) !important; color: var(${themeColorVarFromKey('lv4Fg')}) !important; }
             .tmk-lv5 { background: var(${themeColorVarFromKey('lv5Bg')}) !important; color: var(${themeColorVarFromKey('lv5Fg')}) !important; }
             .tmk-tile div:not(.tmk-title) { display: none !important; }
+
+            /* --- Shared Form Fields --- */
+            .tmk-glass-backdrop {
+                position: fixed;
+                inset: 0;
+                display: none;
+                background: var(${themeColorVarFromKey('overlayBackdrop')});
+                backdrop-filter: blur(10px);
+                -webkit-backdrop-filter: blur(10px);
+                pointer-events: none;
+            }
+            .tmk-pnr-field {
+                display: flex;
+                flex-direction: row;
+                align-items: center;
+                gap: 10px;
+                min-width: 0;
+                max-width: none;
+                width: 100%;
+                box-sizing: border-box;
+            }
+            .tmk-pnr-field .tmk-pnr-label {
+                margin-top: 0;
+            }
+            .tmk-pnr-label {
+                font-size: 18px;
+                font-weight: 600;
+                color: var(--tmk-c-major-font);
+                display: block;
+                flex: 0 0 auto;
+                max-width: none;
+                white-space: normal;
+                overflow: visible;
+                text-overflow: clip;
+                line-height: 1.3;
+            }
+            .tmk-pnr-field input, .tmk-pnr-field select, .tmk-pnr-field textarea {
+                flex: 1 1 auto;
+                min-width: 0;
+                min-height: 42px;
+                padding: 6px 2px;
+                border: 0;
+                border-bottom: 2px solid var(--tmk-c-search-input-border);
+                border-radius: 0;
+                background: transparent;
+                color: var(--tmk-c-major-font);
+                box-sizing: border-box;
+                font-size: 20px;
+                outline: none;
+            }
+            .tmk-pnr-field input::placeholder, .tmk-pnr-field textarea::placeholder {
+                color: color-mix(in srgb, var(--tmk-c-minor-focus) 50%, transparent) !important;
+            }
+            .tmk-pnr-field input:focus, .tmk-pnr-field select:focus, .tmk-pnr-field textarea:focus {
+                border-bottom-color: var(--tmk-c-major-focus);
+                outline: none;
+                box-shadow: none;
+            }
         `;
     }
 
@@ -717,10 +766,9 @@
         }
     }
 
-    // 封装磁贴点击后的固定跳转步骤：标记少收入口 → 通知其它视图收起 → 关菜单 → 页面跳转
+    // 封装磁贴点击后的固定跳转步骤：标记少收入口 → 关菜单 → 页面跳转
     function navigateLink(overlay, fab, linkText, href) {
         matchMyViews(linkText);
-        closeOtherViews();
         closeStartMenu(overlay, fab);
         navigateToContent(href);
     }

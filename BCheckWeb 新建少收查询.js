@@ -30,7 +30,6 @@
     const GLASS_ID = 'tmk-lqv2-glass';
     const MODE_CLASS = 'tmk-step2-modern';
     const MODERN_LOST_QUERY_KEY = 'tmk-modern-lost-query-v2-launch';
-    const FORCE_CLOSE_VIEWS_KEY = 'tmk-force-close-views-ts';
     const LAX_DEST = 'LAX';
     const BAGGAGE_TRIPLE_TO_AIRLINE = Object.freeze({
         '999': 'CA',
@@ -77,10 +76,8 @@
         shell: null,
         observer: null,
         observerRoot: null,
-        pollId: null,
         syncTimer: null,
-        laxAutoDoneByBlock: null,
-        lastForceCloseTs: 0
+        laxAutoDoneByBlock: null
     };
 
 
@@ -112,71 +109,6 @@
     }
 
 
-    function pickColor(c, keys, fallback) {
-        for (let i = 0; i < keys.length; i += 1) {
-            const k = keys[i];
-            if (c[k] !== undefined && c[k] !== null && String(c[k]) !== '') return c[k];
-        }
-        return fallback;
-    }
-
-
-    function expandThemeColors(raw) {
-        const base = THEME2_FALLBACK_COLORS;
-        const c = Object.assign({}, base, raw || {});
-        const majorFocus = pickColor(c, ['majorFocus'], base.majorFocus);
-        const minorFocus = pickColor(c, ['minorFocus'], base.minorFocus);
-        const minorFont = pickColor(c, ['minorFont'], base.minorFont);
-        const majorFont = pickColor(c, ['majorFont'], base.majorFont);
-        const majorButton = pickColor(c, ['majorButton'], base.majorButton);
-        const inputBg = pickColor(c, ['inputBackground'], base.inputBackground);
-        const minorButton = pickColor(c, ['minorButton'], base.minorButton);
-        const overlayOpacityRaw = pickColor(c, ['overlayBackdrop'], '0.4');
-        let overlayOpacity = parseFloat(String(overlayOpacityRaw).replace(/[^\d.]/g, ''));
-        if (!Number.isFinite(overlayOpacity)) overlayOpacity = 0.4;
-        overlayOpacity = Math.max(0, Math.min(1, overlayOpacity));
-        const overlayPercent = Math.max(0, Math.min(100, Math.round(overlayOpacity * 100)));
-        return {
-            overlayBackdrop: 'color-mix(in srgb, ' + minorButton + ' ' + overlayPercent + '%, transparent)',
-            majorFocus: majorFocus,
-            majorFont: majorFont,
-            minorFont: minorFont,
-            minorFocus: minorFocus,
-            majorButton: majorButton,
-            inputBackground: inputBg,
-            minorButton: minorButton,
-            lv1Bg: pickColor(c, ['lv1Bg'], majorFocus),
-            kvToolFg: pickColor(c, ['kvToolFg'], majorFocus),
-            lv2Bg: pickColor(c, ['lv2Bg'], minorFocus),
-            fabHoverBorder: pickColor(c, ['fabHoverBorder'], minorFocus),
-            searchInputBorder: pickColor(c, ['searchInputBorder'], minorFocus),
-            kvToolBorder: pickColor(c, ['kvToolBorder'], minorFocus),
-            tileHoverBorder: pickColor(c, ['tileHoverBorder'], minorFocus),
-            h1: pickColor(c, ['h1'], minorFont),
-            lv1Fg: pickColor(c, ['lv1Fg'], minorFont),
-            lv2Fg: pickColor(c, ['lv2Fg'], minorFont),
-            lv4Fg: pickColor(c, ['lv4Fg'], majorFont),
-            lv3Fg: pickColor(c, ['lv3Fg'], majorFont),
-            fabFg: pickColor(c, ['fabFg'], majorFont),
-            searchInputFg: pickColor(c, ['searchInputFg'], majorFont),
-            lv5Fg: pickColor(c, ['lv5Fg'], majorFont),
-            searchPlaceholder: pickColor(c, ['searchPlaceholder'], majorFont),
-            fabBg: pickColor(c, ['fabBg'], majorButton),
-            searchBg: pickColor(c, ['searchBg'], majorButton),
-            lv5Bg: pickColor(c, ['lv5Bg'], majorButton),
-            searchActiveBg: pickColor(c, ['searchActiveBg'], majorButton),
-            lv4Bg: pickColor(c, ['lv4Bg'], minorButton),
-            searchInputBg: pickColor(c, ['searchInputBg'], inputBg),
-            fabBorder: pickColor(c, ['fabBorder'], minorFocus),
-            searchBorder: pickColor(c, ['searchBorder'], minorFocus),
-            searchActiveBorder: minorFocus,
-            lv3Bg: pickColor(c, ['lv3Bg'], majorButton),
-            searchLoadingBg: pickColor(c, ['searchLoadingBg'], majorButton),
-            searchLoadingFg: pickColor(c, ['searchLoadingFg'], majorFont)
-        };
-    }
-
-
     function applyThemeVars(colors) {
         if (!document.documentElement || !colors) return;
         Object.keys(colors).forEach((k) => {
@@ -201,7 +133,9 @@
                 }
             } catch (e) {}
         }
-        applyThemeVars(expandThemeColors(uiColors || THEME2_FALLBACK_COLORS));
+        // 方案B：优先复用 BCheckWeb_UI 已发布的主题变量，避免在此脚本重复“二次展开/二次计算”
+        const finalColors = Object.assign({}, THEME2_FALLBACK_COLORS, uiColors || {});
+        applyThemeVars(finalColors);
     }
 
 
@@ -228,22 +162,6 @@
     // 与 BCheckWeb_UI publishZLayers 的 __tmkZLayers 一致；毛玻璃用 backgroundCover，其余交互控件用 mainFunctionView
     function getScopedZLayers() {
         return getSharedZLayers();
-    }
-
-
-    function readForceCloseViewsTs() {
-        let ts = 0;
-        try {
-            if (window.top && Number.isFinite(Number(window.top.__tmkForceCloseViewsTs))) {
-                ts = Number(window.top.__tmkForceCloseViewsTs);
-            }
-        } catch (e) {}
-        try {
-            const raw = window.sessionStorage.getItem(FORCE_CLOSE_VIEWS_KEY);
-            const parsed = Number(raw);
-            if (Number.isFinite(parsed)) ts = Math.max(ts, parsed);
-        } catch (e) {}
-        return ts;
     }
 
 
@@ -351,26 +269,17 @@
         const style = document.createElement('style');
         style.id = STYLE_ID;
         style.textContent = `
-            html,
-            body {
+            html.${MODE_CLASS},
+            html.${MODE_CLASS} body {
                 background: transparent !important;
                 color: var(--tmk-c-major-font) !important;
                 font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif !important;
             }
-            .l_mainContentL1,
-            #content_1,
-            .ui-page,
-            .ui-content {
+            html.${MODE_CLASS} .l_mainContentL1,
+            html.${MODE_CLASS} #content_1,
+            html.${MODE_CLASS} .ui-page,
+            html.${MODE_CLASS} .ui-content {
                 background: transparent !important;
-            }
-            #${GLASS_ID} {
-                position: fixed;
-                inset: 0;
-                z-index: ${z.backgroundCover};
-                display: none;
-                background: var(--tmk-c-overlay-backdrop);
-                backdrop-filter: blur(10px);
-                -webkit-backdrop-filter: blur(10px);
             }
             #${TOOLBAR_ID} {
                 position: fixed;
@@ -416,12 +325,12 @@
                 z-index: ${z.mainFunctionView};
                 max-height: calc(100vh - 92px);
                 overflow: auto;
-                background: color-mix(in srgb, var(--tmk-c-major-button) 40%, transparent);
+                background: var(--tmk-c-search-bg);
                 border: 1px solid var(--tmk-c-search-input-border);
                 border-radius: 12px;
-                backdrop-filter: blur(10px);
-                -webkit-backdrop-filter: blur(10px);
-                box-shadow: 0 10px 24px rgba(37, 64, 92, 0.16);
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
+                box-shadow: 0 6px 16px rgba(23, 52, 86, 0.16);
             }
             #${WRAP_ID} h2 {
                 margin: 0 0 18px 0;
@@ -430,34 +339,12 @@
                 font-weight: 700;
                 line-height: 1.15;
             }
-            #${WRAP_ID} h4 {
-                margin: 18px 0 8px 0;
-                color: var(--tmk-c-major-font);
-                font-size: 18px;
-                font-weight: 600;
-                line-height: 1.3;
-            }
-            #${WRAP_ID} .tmk-input {
-                width: 100%;
-                min-height: 42px;
-                border: 0;
-                border-bottom: 2px solid var(--tmk-c-search-input-border);
-                border-radius: 0;
-                background: transparent;
-                color: var(--tmk-c-major-font);
-                font-size: 20px;
-                padding: 6px 2px;
-                box-sizing: border-box;
-                outline: none;
-            }
-            #${WRAP_ID} .tmk-input:focus {
-                border-bottom-color: var(--tmk-c-major-focus);
-            }
             #${WRAP_ID} .tmk-radio-row {
                 display: flex;
                 align-items: center;
                 gap: 18px;
-                margin: 8px 0 4px 0;
+                margin: 0 0 4px 0;
+                width: 100%;
             }
             #${WRAP_ID} .tmk-radio-row label {
                 color: var(--tmk-c-major-font);
@@ -549,11 +436,11 @@
                 overflow: auto;
                 padding: ${m.gap}px;
                 border-radius: 12px;
-                background: color-mix(in srgb, var(--tmk-c-major-button) 40%, transparent);
-                border: 1px solid rgba(151, 177, 203, 0.45);
-                backdrop-filter: blur(10px);
-                -webkit-backdrop-filter: blur(10px);
-                box-shadow: 0 10px 24px rgba(37, 64, 92, 0.16);
+                background: var(--tmk-c-search-bg);
+                border: 1px solid var(--tmk-c-search-input-border);
+                box-shadow: 0 6px 16px rgba(23, 52, 86, 0.16);
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
             }
             #tmk-step2-rows {
                 display: flex;
@@ -775,11 +662,12 @@
         if (!glass) {
             glass = document.createElement('div');
             glass.id = GLASS_ID;
+            glass.className = 'tmk-glass-backdrop';
+            glass.style.zIndex = getScopedZLayers().backgroundCover;
             document.body.appendChild(glass);
         }
         state.glass = glass;
     }
-
 
     function updateToolbar() {
         const toolbar = document.getElementById(TOOLBAR_ID);
@@ -790,13 +678,18 @@
         });
     }
 
-
     function applyMenuModeUI() {
         if (state.form) state.form.style.display = '';
         if (state.wrap) state.wrap.style.display = state.mode === 'legacy' ? 'none' : 'block';
-        if (state.glass) state.glass.style.display = state.mode === 'legacy' ? 'none' : 'block';
+        if (state.glass) {
+            state.glass.style.display = state.mode === 'legacy' ? 'none' : 'block';
+        }
+        if (state.mode === 'modern') {
+            document.documentElement.classList.add(MODE_CLASS);
+        } else {
+            document.documentElement.classList.remove(MODE_CLASS);
+        }
     }
-
 
     function applyStep2ModeUI() {
         const shell = document.getElementById(SHELL_ID);
@@ -804,19 +697,13 @@
         if (state.mode === 'modern') {
             document.documentElement.classList.add(MODE_CLASS);
             if (shell) shell.style.display = '';
-            if (glass) glass.style.display = 'block';
+            if (glass) {
+                glass.style.display = 'block';
+            }
         } else {
             document.documentElement.classList.remove(MODE_CLASS);
             if (shell) shell.style.display = 'none';
             if (glass) glass.style.display = 'none';
-        }
-    }
-
-
-    function enforceUiGlobalControl() {
-        const forceTs = readForceCloseViewsTs();
-        if (forceTs > state.lastForceCloseTs) {
-            state.lastForceCloseTs = forceTs;
         }
     }
 
@@ -937,16 +824,22 @@
         wrap.id = WRAP_ID;
         wrap.innerHTML = `
             <h2>${getTitleText()}</h2>
-            <h4>${withRequired(labels.receive)}</h4>
-            <input id="tmk-lqv2-receive" class="tmk-input" type="text" autocomplete="off" />
-            <h4>${withRequired(labels.bag)}</h4>
-            <input id="tmk-lqv2-bagnum" class="tmk-input" type="text" autocomplete="off" />
-            <h4>查询类型（必填）</h4>
-            <div class="tmk-radio-row">
-                <label><input type="radio" name="tmk-lqv2-type" value="idnum" checked /> 证件号</label>
-                <label><input type="radio" name="tmk-lqv2-type" value="ticketNum" /> 客票号</label>
+            <div class="tmk-pnr-field">
+                <label class="tmk-pnr-label" for="tmk-lqv2-receive">${withRequired(labels.receive)}</label>
+                <input id="tmk-lqv2-receive" type="text" autocomplete="off" />
             </div>
-            <input id="tmk-lqv2-idvalue" class="tmk-input" type="text" autocomplete="off" />
+            <div class="tmk-pnr-field">
+                <label class="tmk-pnr-label" for="tmk-lqv2-bagnum">${withRequired(labels.bag)}</label>
+                <input id="tmk-lqv2-bagnum" type="text" autocomplete="off" />
+            </div>
+            <div class="tmk-pnr-field">
+                <label class="tmk-pnr-label">查询类型（必填）</label>
+                <div class="tmk-radio-row">
+                    <label><input type="radio" name="tmk-lqv2-type" value="idnum" checked /> 证件号</label>
+                    <label><input type="radio" name="tmk-lqv2-type" value="ticketNum" /> 客票号</label>
+                </div>
+                <input id="tmk-lqv2-idvalue" type="text" autocomplete="off" />
+            </div>
             <button id="tmk-lqv2-submit" class="tmk-submit" type="button">查询</button>
         `;
         document.body.appendChild(wrap);
@@ -1074,12 +967,8 @@
         syncFromLegacy();
         bindModernEvents();
         consumeModernLostQueryLaunchMark();
-        state.lastForceCloseTs = readForceCloseViewsTs();
         setMode('modern');
-        window.setInterval(function() {
-            enforceUiGlobalControl();
-            ensureTheme2Applied();
-        }, 500);
+        setTimeout(ensureTheme2Applied, 0);
         window.addEventListener('resize', applyLeftGap);
     }
 
@@ -1663,12 +1552,8 @@
         }
         state.shell = shell;
         consumeModernLostQueryLaunchMark();
-        state.lastForceCloseTs = readForceCloseViewsTs();
         setMode('modern');
-        window.setInterval(function() {
-            enforceUiGlobalControl();
-            ensureTheme2Applied();
-        }, 500);
+        setTimeout(ensureTheme2Applied, 0);
         window.addEventListener('resize', function() {
             applyLeftGap();
             injectStep2ShellStyle(getUiMetrics());
@@ -1697,10 +1582,6 @@
             if (need) scheduleSync(state.shell);
         });
         state.observer.observe(root, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['checked', 'disabled'] });
-        if (state.pollId) clearInterval(state.pollId);
-        state.pollId = setInterval(function() {
-            if (state.mode === 'modern' && state.shell) scheduleSync(state.shell);
-        }, 2000);
     }
 
 
