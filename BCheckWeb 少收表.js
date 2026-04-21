@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         BCheckWeb 少收表 v2 覆盖层
+// @name         BCheckWeb 少收表
 // @namespace    http://tampermonkey.net/
 // @version      2.2.4
 // @description  新建少收：AHL仅壳显示；详情/信息/追踪进 tmk-stage；TN 规则同前；步骤条置顶透明；与少收表 v1 请勿同时启用
@@ -1340,43 +1340,7 @@
             'html.' + MODE_CLASS + ' #' + STAGE_ID + ' { display: none !important; }',
             'html.' + MODE_CLASS + ' #' + STAGE_ID + '.tmk-pnr-stage--on { display: block !important; }',
             'html.' + MODE_CLASS + ' #' + STEPPER_BAR_ID + ' { display: block !important; }',
-            '#' + TOOLBAR_ID + ' {',
-            '  position: fixed;',
-            '  top: var(--tmk-toolbar-top, 10px);',
-            '  right: var(--tmk-toolbar-right, 12px);',
-            '  z-index: ' + z.floatingButton + ';',
-            '  display: inline-flex;',
-            '  align-items: center;',
-            '  gap: var(--tmk-toolbar-gap, 6px);',
-            '  padding: var(--tmk-toolbar-padding, 5px);',
-            '  border-radius: 999px;',
-            '  background: var(--tmk-c-search-bg, var(--tmk-c-major-button));',
-            '  border: 1px solid var(--tmk-c-search-input-border);',
-            '  box-shadow: 0 6px 16px rgba(23, 52, 86, 0.16);',
-            '  backdrop-filter: blur(8px);',
-            '  -webkit-backdrop-filter: blur(8px);',
-            '}',
-            '.tmk-pnr-tb-btn {',
-            '  min-height: var(--tmk-toolbar-btn-min-height, 30px);',
-            '  padding: 0 var(--tmk-toolbar-btn-padding-x, 12px);',
-            '  border-radius: 999px;',
-            '  border: 1px solid var(--tmk-c-search-input-border);',
-            '  background: var(--tmk-c-search-bg);',
-            '  color: var(--tmk-c-major-font);',
-            '  font-size: var(--tmk-toolbar-btn-font-size, 14px);',
-            '  font-weight: 600;',
-            '  cursor: pointer;',
-            '  font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif;',
-            '  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;',
-            '}',
-            '.tmk-pnr-tb-btn:hover {',
-            '  border-color: var(--tmk-c-search-active-border, var(--tmk-c-search-input-border));',
-            '}',
-            '.tmk-pnr-tb-btn.tmk-active {',
-            '  background: var(--tmk-c-major-focus);',
-            '  border-color: var(--tmk-c-major-focus);',
-            '  color: var(--tmk-c-lv1-fg);',
-            '}',
+            '#' + TOOLBAR_ID + ' { z-index: ' + z.mainFunctionView + '; }',
             '#' + STEPPER_BAR_ID + ' {',
             '  display: none;',
             '  position: fixed;',
@@ -1732,9 +1696,10 @@
         if (!document.body || document.getElementById(TOOLBAR_ID)) return;
         const bar = document.createElement('div');
         bar.id = TOOLBAR_ID;
+        bar.className = 'tmk-shared-toolbar';
         bar.innerHTML =
-            '<button type="button" class="tmk-pnr-tb-btn tmk-active" data-tmk-ui="on">我的视图</button>' +
-            '<button type="button" class="tmk-pnr-tb-btn" data-tmk-ui="off">原版页面</button>';
+            '<button type="button" class="tmk-pnr-tb-btn tmk-shared-toolbar-btn tmk-active" data-tmk-ui="on">我的视图</button>' +
+            '<button type="button" class="tmk-pnr-tb-btn tmk-shared-toolbar-btn" data-tmk-ui="off">原版页面</button>';
         document.body.appendChild(bar);
         bar.addEventListener('click', function(ev) {
             const t = ev.target;

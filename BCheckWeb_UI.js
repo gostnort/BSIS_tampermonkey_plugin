@@ -1,5 +1,5 @@
 ﻿// ==UserScript==
-// @name         BCheckWeb UI 瓷砖菜单 - 0.7.10
+// @name         BCheckWeb UI 瓷砖菜单
 // @namespace    http://tampermonkey.net/
 // @version      0.7.10
 // @description  增加滑动动画/精简部分代码
@@ -426,8 +426,12 @@
                 --tmk-toolbar-right: 12px;
                 --tmk-toolbar-gap: 6px;
                 --tmk-toolbar-padding: 5px;
+                --tmk-toolbar-radius: 999px;
+                --tmk-toolbar-shadow: 0 6px 16px rgba(23, 52, 86, 0.16);
+                --tmk-toolbar-blur: 8px;
                 --tmk-toolbar-btn-min-height: 30px;
                 --tmk-toolbar-btn-padding-x: 12px;
+                --tmk-toolbar-btn-radius: 999px;
                 --tmk-toolbar-btn-font-size: 14px;
                 ${zLayerCssVarFromKey('basePage')}: ${z.basePage};
                 ${zLayerCssVarFromKey('backgroundCover')}: ${z.backgroundCover};
@@ -602,6 +606,43 @@
                 backdrop-filter: blur(10px);
                 -webkit-backdrop-filter: blur(10px);
                 pointer-events: none;
+            }
+            .tmk-shared-toolbar {
+                position: fixed;
+                top: var(--tmk-toolbar-top, 10px);
+                right: var(--tmk-toolbar-right, 12px);
+                z-index: var(${zLayerCssVarFromKey('mainFunctionView')});
+                display: inline-flex;
+                align-items: center;
+                gap: var(--tmk-toolbar-gap, 6px);
+                padding: var(--tmk-toolbar-padding, 5px);
+                border-radius: var(--tmk-toolbar-radius, 999px);
+                background: var(${themeColorVarFromKey('searchBg')});
+                border: 1px solid var(${themeColorVarFromKey('searchInputBorder')});
+                box-shadow: var(--tmk-toolbar-shadow, 0 6px 16px rgba(23, 52, 86, 0.16));
+                backdrop-filter: blur(var(--tmk-toolbar-blur, 8px));
+                -webkit-backdrop-filter: blur(var(--tmk-toolbar-blur, 8px));
+            }
+            .tmk-shared-toolbar-btn {
+                min-height: var(--tmk-toolbar-btn-min-height, 30px);
+                padding: 0 var(--tmk-toolbar-btn-padding-x, 12px);
+                border-radius: var(--tmk-toolbar-btn-radius, 999px);
+                border: 1px solid var(${themeColorVarFromKey('searchInputBorder')});
+                background: var(${themeColorVarFromKey('searchBg')});
+                color: var(${themeColorVarFromKey('majorFont')});
+                font-size: var(--tmk-toolbar-btn-font-size, 14px);
+                font-weight: 600;
+                cursor: pointer;
+                font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif;
+                transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+            }
+            .tmk-shared-toolbar-btn:hover {
+                border-color: var(${themeColorVarFromKey('searchActiveBorder')}, var(${themeColorVarFromKey('searchInputBorder')}));
+            }
+            .tmk-shared-toolbar-btn.tmk-active {
+                background: var(${themeColorVarFromKey('majorFocus')});
+                border-color: var(${themeColorVarFromKey('majorFocus')});
+                color: var(${themeColorVarFromKey('lv1Fg')});
             }
             .tmk-pnr-field {
                 display: flex;

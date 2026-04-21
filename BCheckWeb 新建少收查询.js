@@ -281,38 +281,7 @@
             html.${MODE_CLASS} .ui-content {
                 background: transparent !important;
             }
-            #${TOOLBAR_ID} {
-                position: fixed;
-                top: 10px;
-                right: 12px;
-                z-index: ${z.mainFunctionView};
-                display: inline-flex;
-                align-items: center;
-                gap: 6px;
-                padding: 5px;
-                border-radius: 999px;
-                background: var(--tmk-c-search-bg);
-                border: 1px solid var(--tmk-c-search-input-border);
-                box-shadow: 0 6px 16px rgba(23, 52, 86, 0.16);
-                backdrop-filter: blur(8px);
-                -webkit-backdrop-filter: blur(8px);
-            }
-            .tmk-lqv2-btn {
-                min-height: 30px;
-                padding: 0 12px;
-                border-radius: 999px;
-                border: 1px solid var(--tmk-c-search-input-border);
-                background: var(--tmk-c-search-bg);
-                color: var(--tmk-c-major-font);
-                font-size: 14px;
-                font-weight: 600;
-                cursor: pointer;
-            }
-            .tmk-lqv2-btn.tmk-active {
-                background: var(--tmk-c-major-focus);
-                border-color: var(--tmk-c-major-focus);
-                color: var(--tmk-c-lv1-fg);
-            }
+            #${TOOLBAR_ID} { z-index: ${z.mainFunctionView}; }
             #${WRAP_ID} {
                 width: calc(100vw - var(--tmk-left-gap, 16px) - 24px);
                 max-width: calc(100vw - var(--tmk-left-gap, 16px) - 24px);
@@ -724,9 +693,10 @@
         if (!document.body || document.getElementById(TOOLBAR_ID)) return;
         const toolbar = document.createElement('div');
         toolbar.id = TOOLBAR_ID;
+        toolbar.className = 'tmk-shared-toolbar';
         toolbar.innerHTML = `
-            <button class="tmk-lqv2-btn tmk-active" data-mode="modern" type="button">我的视图</button>
-            <button class="tmk-lqv2-btn" data-mode="legacy" type="button">原版页面</button>
+            <button class="tmk-lqv2-btn tmk-shared-toolbar-btn tmk-active" data-mode="modern" type="button">我的视图</button>
+            <button class="tmk-lqv2-btn tmk-shared-toolbar-btn" data-mode="legacy" type="button">原版页面</button>
         `;
         document.body.appendChild(toolbar);
         toolbar.addEventListener('click', (event) => {
