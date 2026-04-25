@@ -42,18 +42,12 @@
     const MIRROR_PAGE_CLASS = 'tmk-pnr-mirror-page';
     const DEFAULT_CP = '3102151188';
     const CT_PATTERN = /^[A-Z]{2}[0-9]{2}[A-Z]{3}$/;
-    const DEFAULT_Z_LAYERS = Object.freeze({
-        basePage: 0,
-        backgroundCover: 100,
-        mainFunctionView: 500,
-        functionButton: 600,
-        searchControls: 900,
-        floatingButton: 1000
-    });
+    const TOOLSET_GLOBAL_KEY = '__tmkUiToolset';
     const state = {
         uiVisible: true,
         mainStep: 1,
         infoStep: 2,
+        infoStagePages: [],
         glass: null,
         shell: null,
         capsLockActive: false,
@@ -69,30 +63,44 @@
     window[INIT_FLAG] = true;
 
 
-    function normalizeZLayers(raw) {
-        const out = Object.assign({}, DEFAULT_Z_LAYERS);
-        if (!raw || typeof raw !== 'object') return out;
-        Object.keys(DEFAULT_Z_LAYERS).forEach(function(k) {
-            const v = Number(raw[k]);
-            if (Number.isFinite(v)) out[k] = v;
-        });
-        return out;
+    function resolveToolset() {
+        const topToolset = (function() {
+            try {
+                return window.top && window.top[TOOLSET_GLOBAL_KEY];
+            } catch (e) {
+                return null;
+            }
+        })();
+        if (topToolset && typeof topToolset === 'object') return topToolset;
+        if (window[TOOLSET_GLOBAL_KEY] && typeof window[TOOLSET_GLOBAL_KEY] === 'object') return window[TOOLSET_GLOBAL_KEY];
+        return null;
     }
 
 
     function getSharedZLayers() {
+        const toolset = resolveToolset();
+        if (toolset && typeof toolset.getSharedZLayers === 'function') {
+            return toolset.getSharedZLayers();
+        }
         try {
-            if (window.top && window.top.__tmkZLayers) return normalizeZLayers(window.top.__tmkZLayers);
+            if (window.top && window.top.__tmkZLayers) return window.top.__tmkZLayers;
         } catch (e) {}
-        if (window.__tmkZLayers) return normalizeZLayers(window.__tmkZLayers);
-        return normalizeZLayers(null);
+        if (window.__tmkZLayers) return window.__tmkZLayers;
+        return {};
     }
 
 
+    // 沿 parent 向上查找 id=content_frame；无 frameset 但存在 content_1 时视为直连业务页
     function isContentFrame() {
         try {
-            if (window.top === window.self) return true;
-            return window.frameElement && window.frameElement.id === 'content_frame';
+            let w = window;
+            while (w && w !== w.top) {
+                const fe = w.frameElement;
+                if (fe && fe.id === 'content_frame') return true;
+                w = w.parent;
+            }
+            if (!window.frameElement && document.getElementById('content_1')) return true;
+            return false;
         } catch (e) {
             return false;
         }
@@ -191,64 +199,18 @@
     }
 
 
-    // 与 BCheckWeb_UI.js themeColorVarFromKey 一致：语义色 → --tmk-c-*
-    function themeColorVarFromKey(key) {
-        return '--tmk-c-' + String(key).replace(/([A-Z])/g, '-$1').toLowerCase();
-    }
-
-
     // 将 UI 脚本发布的 __tmkTheme.colors 同步到本帧 :root（与 applyThemeCss 写入的变量名一致）
     function syncThemeVarsFromUi() {
-        if (!document.documentElement) return;
-        let colors = null;
-        try {
-            if (window.__tmkTheme && window.__tmkTheme.colors) {
-                colors = window.__tmkTheme.colors;
-            }
-        } catch (e) {}
-        if (!colors) {
-            try {
-                if (window.top && window.top.__tmkTheme && window.top.__tmkTheme.colors) {
-                    colors = window.top.__tmkTheme.colors;
-                }
-            } catch (e2) {}
-        }
+        const toolset = resolveToolset();
+        if (!toolset || !toolset.ThemeVarToolset) return;
+        const t = toolset.ThemeVarToolset;
+        if (typeof t.readThemeColors !== 'function' || typeof t.applyThemeVars !== 'function') return;
+        const colors = t.readThemeColors();
         if (!colors || typeof colors !== 'object') return;
-        Object.keys(colors).forEach(function(k) {
-            const v = colors[k];
-            if (v === undefined || v === null || String(v) === '') return;
-            try {
-                document.documentElement.style.setProperty(themeColorVarFromKey(k), String(v));
-            } catch (e3) {}
-        });
-        // 部分环境下 __tmkTheme.colors 仅有展开键、缺基底键名；少收表样式用 --tmk-c-major-focus 等。此处每个基底键只从一个展开键取值（与 BCheckWeb_UI.js expandThemeColors 中对应链条一致，改分布时只改 UI 一处或改下表一对一映射）
-        ensureCanonicalThemeVarsFallback(colors);
-    }
-
-
-    // 基底键缺失时：canonicalKey → 唯一展开键（每个语义色只绑一个 BCheckWeb_UI 色键，无多键备选链）
-    function ensureCanonicalThemeVarsFallback(colors) {
-        if (!colors || typeof colors !== 'object' || !document.documentElement) return;
-        const root = document.documentElement;
-        const canonicalFromExpand = {
-            majorFocus: 'lv1Bg',
-            majorFont: 'lv3Fg',
-            minorFont: 'lv1Fg',
-            minorFocus: 'searchInputBorder',
-            majorButton: 'fabBg',
-            inputBackground: 'searchInputBg',
-            minorButton: 'lv4Bg'
-        };
-        Object.keys(canonicalFromExpand).forEach(function(canonicalKey) {
-            const cur = colors[canonicalKey];
-            if (cur !== undefined && cur !== null && String(cur) !== '') return;
-            const srcKey = canonicalFromExpand[canonicalKey];
-            const src = colors[srcKey];
-            if (src === undefined || src === null || String(src) === '') return;
-            try {
-                root.style.setProperty(themeColorVarFromKey(canonicalKey), String(src));
-            } catch (e) {}
-        });
+        t.applyThemeVars(document, colors);
+        if (typeof t.ensureCanonicalThemeVarsFallback === 'function') {
+            t.ensureCanonicalThemeVarsFallback(document, colors);
+        }
     }
 
 
@@ -614,15 +576,13 @@
 
 
     // 行李牌 TN：排除 file/button 及非文本类型，避免「上传」等文案进入拼接
+    // 须与 data-name/name/邻近文案中的「行李号」一致，避免误选丢失件数字段
     function isTnEligibleTextInput(input) {
-        const t = (input.getAttribute('type') || 'text').toLowerCase();
-        if (['hidden', 'file', 'button', 'submit', 'reset', 'image'].indexOf(t) >= 0) return false;
-        if (t === 'checkbox' || t === 'radio') return false;
-        return true;
+        const type = (input.getAttribute('type') || 'text').toLowerCase();
+        return type === 'text' || type === 'search' || input.tagName.toLowerCase() === 'textarea';
     }
 
 
-    // 须与 data-name/name/邻近文案中的「行李号」一致，避免误选丢失件数字段
     function isTnBaggageSemantic(input) {
         const dn = String(input.getAttribute('data-name') || '');
         const nm = String(input.getAttribute('name') || '').toLowerCase();
@@ -1102,12 +1062,6 @@
     }
 
 
-    function applyQuickFill() {
-        const r = validateAndApplyQuick(false);
-        return r;
-    }
-
-
     function focusSelectQuickField(fieldKey) {
         const qi = getQuickInputs();
         const el = qi && fieldKey ? qi[fieldKey] : null;
@@ -1251,11 +1205,6 @@
     }
 
 
-    function previewQuickFill() {
-        runPreviewPipeline();
-    }
-
-
     function runPreviewPipeline() {
         const r = validateAndApplyQuick(false);
         if (!r.ok) {
@@ -1330,6 +1279,13 @@
     // 功能：注入覆盖层专用样式（不改动原网页元素）。
     function injectStyles() {
         if (document.getElementById(STYLE_ID)) return;
+        const toolset = resolveToolset();
+        if (toolset && toolset.OverlayButtonStyleToolset && typeof toolset.OverlayButtonStyleToolset.applyVars === 'function') {
+            toolset.OverlayButtonStyleToolset.applyVars(document);
+        }
+        if (toolset && toolset.OverlayInputStyleToolset && typeof toolset.OverlayInputStyleToolset.applyVars === 'function') {
+            toolset.OverlayInputStyleToolset.applyVars(document);
+        }
         const z = getSharedZLayers();
         const style = document.createElement('style');
         style.id = STYLE_ID;
@@ -1341,6 +1297,7 @@
             'html.' + MODE_CLASS + ' #' + STAGE_ID + '.tmk-pnr-stage--on { display: block !important; }',
             'html.' + MODE_CLASS + ' #' + STEPPER_BAR_ID + ' { display: block !important; }',
             '#' + TOOLBAR_ID + ' { z-index: ' + z.mainFunctionView + '; }',
+            toolset && toolset.OverlayButtonStyleToolset ? toolset.OverlayButtonStyleToolset.getToolbarButtonCss() : '',
             '#' + STEPPER_BAR_ID + ' {',
             '  display: none;',
             '  position: fixed;',
@@ -1501,15 +1458,15 @@
             '  min-width: 0;',
             '  height: calc(var(--tmk-medium, 92px) * 0.382);',
             '  padding: 0 10px;',
-            '  border-radius: 12px;',
-            '  border: 1px solid var(--tmk-c-major-focus);',
-            '  background: var(--tmk-c-major-button);',
-            '  color: var(--tmk-c-major-font);',
-            '  font-size: 20px;',
-            '  font-weight: 700;',
+            '  border-radius: var(--tmk-btn-primary-radius, 10px);',
+            '  border: 1px solid var(--tmk-btn-secondary-border-color, var(--tmk-c-major-focus));',
+            '  background: var(--tmk-btn-secondary-bg, var(--tmk-c-major-button));',
+            '  color: var(--tmk-btn-secondary-fg, var(--tmk-c-major-font));',
+            '  font-size: var(--tmk-btn-font-size, 20px);',
+            '  font-weight: var(--tmk-btn-font-weight, 700);',
             '  cursor: pointer;',
             '  opacity: 0.4;',
-            '  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(0, 0, 0, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.06);',
+            '  box-shadow: var(--tmk-btn-shadow, 0 3px 10px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(0, 0, 0, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.06));',
             '  transition: opacity 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;',
             '  display: none;',
             '  align-items: center;',
@@ -1524,8 +1481,8 @@
             '  flex: 1 1 0;',
             '  min-width: 0;',
             '  border: none;',
-            '  background: var(--tmk-c-major-focus);',
-            '  color: var(--tmk-c-lv1-fg);',
+            '  background: var(--tmk-btn-primary-bg, var(--tmk-c-major-focus));',
+            '  color: var(--tmk-btn-primary-fg, var(--tmk-c-lv1-fg));',
             '  opacity: 1;',
             '  box-shadow: none;',
             '}',
@@ -1536,11 +1493,11 @@
             '  min-width: 0;',
             '  height: calc(var(--tmk-medium, 92px) * 0.382);',
             '  padding: 0 14px;',
-            '  border: 1px solid var(--tmk-c-major-focus);',
-            '  background: var(--tmk-c-major-button);',
-            '  color: var(--tmk-c-major-font);',
+            '  border: 1px solid var(--tmk-btn-secondary-border-color, var(--tmk-c-major-focus));',
+            '  background: var(--tmk-btn-secondary-bg, var(--tmk-c-major-button));',
+            '  color: var(--tmk-btn-secondary-fg, var(--tmk-c-major-font));',
             '  opacity: 0.4;',
-            '  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(0, 0, 0, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.06);',
+            '  box-shadow: var(--tmk-btn-shadow, 0 3px 10px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(0, 0, 0, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.06));',
             '  z-index: ' + z.functionButton + ';',
             '}',
             '#' + QUICK_FILL_FAB_ID + ':hover,',
@@ -1548,7 +1505,7 @@
             '#' + PREVIEW_BTN_ID + ':hover,',
             '#' + PREVIEW_BTN_ID + ':focus-visible {',
             '  opacity: 1;',
-            '  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);',
+            '  box-shadow: var(--tmk-btn-hover-shadow, 0 4px 8px rgba(0, 0, 0, 0.5));',
             '  outline: none;',
             '}',
             '#' + DETAIL_QUICK_FILL_FAB_ID + ' {',
@@ -1560,10 +1517,10 @@
             '  min-width: var(--tmk-medium, 92px);',
             '  height: calc(var(--tmk-medium, 92px) * 0.382);',
             '  border: none;',
-            '  background: var(--tmk-c-major-focus);',
-            '  color: var(--tmk-c-lv1-fg);',
-            '  font-size: 20px;',
-            '  font-weight: 700;',
+            '  background: var(--tmk-btn-primary-bg, var(--tmk-c-major-focus));',
+            '  color: var(--tmk-btn-primary-fg, var(--tmk-c-lv1-fg));',
+            '  font-size: var(--tmk-btn-font-size, 20px);',
+            '  font-weight: var(--tmk-btn-font-weight, 700);',
             '  opacity: 0.5;',
             '  transition: opacity 0.2s ease, box-shadow 0.2s ease;',
             '  box-shadow: none;',
@@ -1572,7 +1529,7 @@
             '#' + DETAIL_QUICK_FILL_FAB_ID + ':hover,',
             '#' + DETAIL_QUICK_FILL_FAB_ID + ':focus-visible {',
             '  opacity: 1;',
-            '  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);',
+            '  box-shadow: var(--tmk-btn-hover-shadow, 0 4px 8px rgba(0, 0, 0, 0.5));',
             '  outline: none;',
             '}',
             'html.' + MODE_CLASS + ' .tmk-pnr-qf-fab--on {',
@@ -1604,6 +1561,27 @@
             '  background: var(--tmk-c-major-focus);',
             '  border-color: var(--tmk-c-major-focus);',
             '  color: var(--tmk-c-lv1-fg);',
+            '}',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '.tmk-pnr-mirror-page--on button:not(.' + STEP2_GROUP_TITLE_CLASS + '),',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '.tmk-pnr-mirror-page--on select,',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '.tmk-pnr-mirror-page--on textarea {',
+            toolset && toolset.OverlayInputStyleToolset ? toolset.OverlayInputStyleToolset.getPropertiesBlock() : '  border: 1px solid var(--tmk-ctl-border-color, var(--tmk-c-search-input-border)) !important; border-radius: var(--tmk-ctl-radius, 8px) !important; background: var(--tmk-ctl-bg, var(--tmk-c-input-background)) !important; color: var(--tmk-ctl-fg, var(--tmk-c-major-font)) !important; box-sizing: border-box;',
+            '}',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '.tmk-pnr-mirror-page--on textarea {',
+            '  min-height: 72px;',
+            '  padding: var(--tmk-ctl-pad-y, 6px) var(--tmk-ctl-pad-x, 10px);',
+            '}',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '.tmk-pnr-mirror-page--on select {',
+            '  min-height: var(--tmk-ctl-min-h, 34px);',
+            '  padding: var(--tmk-ctl-pad-y, 6px) var(--tmk-ctl-pad-x, 10px);',
+            '}',
+            'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '.tmk-pnr-mirror-page--on button:not(.' + STEP2_GROUP_TITLE_CLASS + ') {',
+            '  min-height: var(--tmk-ctl-min-h, 34px);',
+            '  padding: var(--tmk-ctl-pad-y, 6px) var(--tmk-ctl-pad-x, 10px);',
+            '  background: var(--tmk-btn-secondary-bg, var(--tmk-c-major-button)) !important;',
+            '  color: var(--tmk-btn-secondary-fg, var(--tmk-c-major-font)) !important;',
+            '  font-size: 14px;',
+            '  cursor: pointer;',
             '}',
             'html.' + MODE_CLASS + ' .tmk-pnr-pane-hidden { display: none !important; }',
             'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + ' {',
@@ -1698,8 +1676,8 @@
         bar.id = TOOLBAR_ID;
         bar.className = 'tmk-shared-toolbar';
         bar.innerHTML =
-            '<button type="button" class="tmk-pnr-tb-btn tmk-shared-toolbar-btn tmk-active" data-tmk-ui="on">我的视图</button>' +
-            '<button type="button" class="tmk-pnr-tb-btn tmk-shared-toolbar-btn" data-tmk-ui="off">原版页面</button>';
+            '<button type="button" class="tmk-toolbar-btn tmk-active" data-tmk-ui="on">我的视图</button>' +
+            '<button type="button" class="tmk-toolbar-btn" data-tmk-ui="off">原版页面</button>';
         document.body.appendChild(bar);
         bar.addEventListener('click', function(ev) {
             const t = ev.target;
@@ -1715,7 +1693,7 @@
     function updateToolbarButtons() {
         const bar = document.getElementById(TOOLBAR_ID);
         if (!bar) return;
-        bar.querySelectorAll('.tmk-pnr-tb-btn').forEach(function(btn) {
+        bar.querySelectorAll('.tmk-toolbar-btn').forEach(function(btn) {
             const on = btn.getAttribute('data-tmk-ui') === (state.uiVisible ? 'on' : 'off');
             btn.classList.toggle('tmk-active', on);
         });
@@ -1800,18 +1778,72 @@
     }
 
 
+    function parsePageNoFromHeaderItem(li) {
+        if (!li) return null;
+        const rawAttrs = [
+            li.getAttribute('data-target') || '',
+            li.getAttribute('data-content') || '',
+            li.getAttribute('data-id') || '',
+            li.getAttribute('onclick') || ''
+        ].join(' ');
+        const anchor = li.querySelector('a');
+        const href = anchor ? String(anchor.getAttribute('href') || '') : '';
+        const onclick = anchor ? String(anchor.getAttribute('onclick') || '') : '';
+        const raw = [rawAttrs, href, onclick].join(' ');
+        let m = raw.match(/content_(\d+)/i);
+        if (m) return parseInt(m[1], 10);
+        m = raw.match(/(?:show|switch|open|goto)[a-zA-Z_]*\s*\(\s*['"]?(\d+)['"]?/i);
+        if (m) return parseInt(m[1], 10);
+        return null;
+    }
+
+
+    function getHeaderTabs() {
+        const root = document.getElementById('l_header') || document.querySelector('.l_header');
+        if (!root) return [];
+        const tabs = [];
+        root.querySelectorAll('li').forEach(function(li, idx) {
+            const pageNo = parsePageNoFromHeaderItem(li) || idx + 1;
+            const txt = String((li.textContent || '').replace(/\s+/g, ' ').trim());
+            if (!txt) return;
+            tabs.push({ pageNo: pageNo, label: txt, order: idx });
+        });
+        return tabs;
+    }
+
+
+    function resolveInfoStagePages() {
+        const tabs = getHeaderTabs();
+        if (tabs.length >= 3) {
+            return tabs.slice(1, -1).map(function(x) {
+                return { pageNo: x.pageNo, label: x.label };
+            }).filter(function(x) {
+                return Number.isFinite(x.pageNo);
+            });
+        }
+        return [];
+    }
+
+
 
 
     // 功能：构建信息页子区块切换按钮。
     function buildInfoStageButtons() {
         const wrap = document.getElementById(INFO_STAGE_ID);
         if (!wrap) return;
+        state.infoStagePages = resolveInfoStagePages();
         wrap.innerHTML = '';
-        [2, 3, 4, 5, 6].forEach(function(n) {
+        if (!state.infoStagePages.length) return;
+        const hasCurrent = state.infoStagePages.some(function(x) {
+            return Number(x.pageNo) === Number(state.infoStep);
+        });
+        if (!hasCurrent) state.infoStep = Number(state.infoStagePages[0].pageNo) || 2;
+        state.infoStagePages.forEach(function(item) {
+            const n = Number(item.pageNo);
             const b = document.createElement('button');
             b.type = 'button';
             b.className = INFO_STAGE_BTN_CLASS + (state.infoStep === n ? ' is-active' : '');
-            b.textContent = '区块' + n;
+            b.textContent = item.label || ('区块' + n);
             b.setAttribute('data-tmk-info-stage', String(n));
             b.addEventListener('click', function() {
                 state.infoStep = n;

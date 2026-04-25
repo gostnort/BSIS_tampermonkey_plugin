@@ -14,8 +14,23 @@
 (function() {
     'use strict';
 
+    function isUnderContentFrame() {
+        try {
+            let w = window;
+            while (w && w !== w.top) {
+                const fe = w.frameElement;
+                if (fe && fe.id === 'content_frame') return true;
+                w = w.parent;
+            }
+            return false;
+        } catch (e) {
+            return false;
+        }
+    }
+
+
     const inTopWindow = window.top === window.self;
-    const inContentFrame = !inTopWindow && window.frameElement && window.frameElement.id === 'content_frame';
+    const inContentFrame = !inTopWindow && isUnderContentFrame();
     if (!inTopWindow && !inContentFrame) return;
 
     const FAB_ID = 'tmk-fab';
@@ -35,15 +50,7 @@
     const THEME_JSON_URL = 'https://raw.githubusercontent.com/Gostnort/BSIS_tampermonkey_plugin/main/BCheckWeb_theme.json';
     const return_icon = 'data:image/png;base64,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';
     const search_icon = 'data:image/png;base64,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';
-    const BASE_Z = 0;
-    const DEFAULT_Z_LAYERS = Object.freeze({
-        basePage: BASE_Z + 0,
-        backgroundCover: BASE_Z + 1000,
-        mainFunctionView: BASE_Z + 5000,
-        functionButton: BASE_Z + 6000,
-        searchControls: BASE_Z + 9000,
-        floatingButton: BASE_Z + 10000
-    });
+    const TOOLSET_GLOBAL_KEY = '__tmkUiToolset';
 
     const state = { overlayOpen: false, showingSub: false, currentGroup: null, searchExpanded: false };
 
@@ -74,117 +81,43 @@
     }
 
 
+    function resolveToolset() {
+        const topToolset = (function() {
+            try {
+                return window.top && window.top[TOOLSET_GLOBAL_KEY];
+            } catch (e) {
+                return null;
+            }
+        })();
+        if (topToolset && typeof topToolset === 'object') return topToolset;
+        if (window[TOOLSET_GLOBAL_KEY] && typeof window[TOOLSET_GLOBAL_KEY] === 'object') return window[TOOLSET_GLOBAL_KEY];
+        return null;
+    }
+
+
     function zLayerCssVarFromKey(key) {
+        const toolset = resolveToolset();
+        if (toolset && typeof toolset.zLayerCssVarFromKey === 'function') {
+            return toolset.zLayerCssVarFromKey(key);
+        }
         return '--tmk-z-' + String(key).replace(/([A-Z])/g, '-$1').toLowerCase();
     }
 
 
-    function normalizeZLayers(raw) {
-        const out = Object.assign({}, DEFAULT_Z_LAYERS);
-        if (!raw || typeof raw !== 'object') return out;
-        Object.keys(DEFAULT_Z_LAYERS).forEach((k) => {
-            const v = Number(raw[k]);
-            if (Number.isFinite(v)) out[k] = v;
-        });
-        return out;
-    }
-
-
     function publishZLayers(raw) {
-        const payload = normalizeZLayers(raw);
-        try {
-            if (window.top) window.top.__tmkZLayers = payload;
-        } catch (e) {}
-        window.__tmkZLayers = payload;
-        return payload;
-    }
-
-
-    function pickColor(c, keys, fallback) {
-        for (let i = 0; i < keys.length; i += 1) {
-            const k = keys[i];
-            if (c[k] !== undefined && c[k] !== null && String(c[k]) !== '') return c[k];
+        const toolset = resolveToolset();
+        if (toolset && typeof toolset.publishZLayers === 'function') {
+            return toolset.publishZLayers(raw);
         }
-        return fallback;
-    }
-
-
-    // 主题语义色 → CSS 扁平变量（供 applyThemeCss）
-    function expandThemeColors(raw) {
-        const base = DEFAULT_THEME_PACK.themes[0].colors;
-        const c = Object.assign({}, base, raw || {});
-        const majorFocus = pickColor(c, ['majorFocus']);
-        const minorFocus = pickColor(c, ['minorFocus']);
-        const minorFont = pickColor(c, ['minorFont']);
-        const majorFont = pickColor(c, ['majorFont']);
-        const majorButton = pickColor(c, ['majorButton']);
-        const inputBg = pickColor(c, ['inputBackground']);
-        const minorButton = pickColor(c, ['minorButton']);
-        const overlayOpacityRaw = pickColor(c, ['overlayBackdrop'], '0.4');
-        let overlayOpacity = parseFloat(String(overlayOpacityRaw).replace(/[^\d.]/g, ''));
-        if (!Number.isFinite(overlayOpacity)) overlayOpacity = 0.4;
-        overlayOpacity = Math.max(0, Math.min(1, overlayOpacity));
-        const overlayPercent = Math.max(0, Math.min(100, Math.round(overlayOpacity * 100)));
-        const out = {
-            overlayBackdrop: 'color-mix(in srgb, ' + minorButton + ' ' + overlayPercent + '%, transparent)',
-            majorFocus: majorFocus,
-            majorFont: majorFont,
-            minorFont: minorFont,
-            minorFocus: minorFocus,
-            majorButton: majorButton,
-            inputBackground: inputBg,
-            minorButton: minorButton,
-            lv1Bg: pickColor(c, ['lv1Bg'], majorFocus),
-            kvToolFg: pickColor(c, ['kvToolFg'], majorFocus),
-            lv2Bg: pickColor(c, ['lv2Bg'], minorFocus),
-            fabHoverBorder: pickColor(c, ['fabHoverBorder'], minorFocus),
-            searchInputBorder: pickColor(c, ['searchInputBorder'], minorFocus),
-            kvToolBorder: pickColor(c, ['kvToolBorder'], minorFocus),
-            tileHoverBorder: pickColor(c, ['tileHoverBorder'], minorFocus),
-            h1: pickColor(c, ['h1'], minorFont),
-            lv1Fg: pickColor(c, ['lv1Fg'], minorFont),
-            lv2Fg: pickColor(c, ['lv2Fg'], minorFont),
-            lv4Fg: pickColor(c, ['lv4Fg'], majorFont),
-            lv3Fg: pickColor(c, ['lv3Fg'], majorFont),
-            fabFg: pickColor(c, ['fabFg'], majorFont),
-            searchInputFg: pickColor(c, ['searchInputFg'], majorFont),
-            lv5Fg: pickColor(c, ['lv5Fg'], majorFont),
-            searchPlaceholder: pickColor(c, ['searchPlaceholder'], majorFont),
-            fabBg: pickColor(c, ['fabBg'], majorButton),
-            searchBg: pickColor(c, ['searchBg'], majorButton),
-            lv5Bg: pickColor(c, ['lv5Bg'], majorButton),
-            searchActiveBg: pickColor(c, ['searchActiveBg'], majorButton),
-            lv4Bg: pickColor(c, ['lv4Bg'], minorButton),
-            searchInputBg: pickColor(c, ['searchInputBg'], inputBg),
-            fabBorder: pickColor(c, ['fabBorder'], minorFocus),
-            searchBorder: pickColor(c, ['searchBorder'], minorFocus),
-            searchActiveBorder: minorFocus,
-            lv3Bg: pickColor(c, ['lv3Bg'], majorButton),
-            searchLoadingBg: pickColor(c, ['searchLoadingBg'], majorButton),
-            searchLoadingFg: pickColor(c, ['searchLoadingFg'], majorFont)
-        };
-        return out;
-    }
-
-
-    function readThemeIndex() {
-        try {
-            const v = parseInt(localStorage.getItem(THEME_STORAGE_KEY), 10);
-            return Number.isFinite(v) ? v : 1;
-        } catch (e) {
-            return 1;
-        }
-    }
-
-
-    function saveThemeIndex(i) {
-        try {
-            localStorage.setItem(THEME_STORAGE_KEY, String(i));
-        } catch (e) {}
+        return raw && typeof raw === 'object' ? raw : {};
     }
 
 
     function getCurrentThemeId() {
+        const toolset = resolveToolset();
+        if (toolset && toolset.StartMenuThemeController && typeof toolset.StartMenuThemeController.getCurrentThemeId === 'function') {
+            return toolset.StartMenuThemeController.getCurrentThemeId();
+        }
         try {
             const t = window.__tmkTheme;
             if (t && t.id !== undefined && t.id !== null) return t.id;
@@ -193,25 +126,12 @@
     }
 
 
-    function sortThemesById(arr) {
-        return arr.slice().sort((a, b) => Number(a.id) - Number(b.id));
-    }
-
-
-    async function fetchThemesPackOnline() {
-        try {
-            const r = await fetch(THEME_JSON_URL, { cache: 'no-store' });
-            if (!r.ok) return null;
-            const data = await r.json();
-            if (!data || !Array.isArray(data.themes) || !data.themes.length) return null;
-            return data;
-        } catch (e) {
-            return null;
-        }
-    }
-
-
     function applyThemeCss(doc, theme) {
+        const toolset = resolveToolset();
+        if (toolset && toolset.StartMenuThemeController && typeof toolset.StartMenuThemeController.applyThemeCss === 'function') {
+            toolset.StartMenuThemeController.applyThemeCss(doc, theme);
+            return;
+        }
         if (!doc || !doc.head || !theme || !theme.colors) return;
         let el = doc.getElementById('tmk-theme-vars');
         if (!el) {
@@ -234,36 +154,38 @@
 
 
     async function bootstrapTheme(doc) {
-        const online = await fetchThemesPackOnline();
-        const themes = online && online.themes && online.themes.length
-            ? sortThemesById(online.themes)
-            : sortThemesById(DEFAULT_THEME_PACK.themes);
-        const n = themes.length;
-        let idx = readThemeIndex() % n;
-        if (idx < 0) idx += n;
-        const th = themes[idx];
-        applyThemeCss(doc, { id: th.id, name: th.name, colors: expandThemeColors(th.colors) });
-        try {
-            publishUiMetrics(calcUiMetrics());
-        } catch (e) {}
+        const toolset = resolveToolset();
+        if (toolset && toolset.StartMenuThemeController && typeof toolset.StartMenuThemeController.bootstrapTheme === 'function') {
+            await toolset.StartMenuThemeController.bootstrapTheme(doc, {
+                themeStorageKey: THEME_STORAGE_KEY,
+                themeJsonUrl: THEME_JSON_URL,
+                defaultThemePack: DEFAULT_THEME_PACK,
+                onThemeApplied: function() {
+                    try {
+                        publishUiMetrics(calcUiMetrics());
+                    } catch (e) {}
+                }
+            });
+            return;
+        }
     }
 
 
     async function cycleTheme(doc) {
-        const online = await fetchThemesPackOnline();
-        const themes = online && online.themes && online.themes.length
-            ? sortThemesById(online.themes)
-            : sortThemesById(DEFAULT_THEME_PACK.themes);
-        const n = themes.length;
-        if (!n) return;
-        let idx = readThemeIndex() + 1;
-        if (idx >= n) idx = 0;
-        saveThemeIndex(idx);
-        const th = themes[idx];
-        applyThemeCss(doc, { id: th.id, name: th.name, colors: expandThemeColors(th.colors) });
-        try {
-            publishUiMetrics(calcUiMetrics());
-        } catch (e) {}
+        const toolset = resolveToolset();
+        if (toolset && toolset.StartMenuThemeController && typeof toolset.StartMenuThemeController.cycleTheme === 'function') {
+            await toolset.StartMenuThemeController.cycleTheme(doc, {
+                themeStorageKey: THEME_STORAGE_KEY,
+                themeJsonUrl: THEME_JSON_URL,
+                defaultThemePack: DEFAULT_THEME_PACK,
+                onThemeApplied: function() {
+                    try {
+                        publishUiMetrics(calcUiMetrics());
+                    } catch (e) {}
+                }
+            });
+            return;
+        }
     }
 
     // --- 1. 链接提取：使用 a.href DOM属性（浏览器已按 frame 自身 baseURI 解析好的绝对URL）---
@@ -405,8 +327,21 @@
     function injectStyle(doc) {
         if (!doc || !doc.head) return;
         const def = DEFAULT_THEME_PACK.themes[0];
-        saveThemeIndex(1);
-        applyThemeCss(doc, { id: def.id, name: def.name, colors: expandThemeColors(def.colors) });
+        const toolset = resolveToolset();
+        if (toolset && toolset.StartMenuThemeController) {
+            if (typeof toolset.StartMenuThemeController.saveThemeIndex === 'function') {
+                toolset.StartMenuThemeController.saveThemeIndex(THEME_STORAGE_KEY, 1);
+            }
+            if (typeof toolset.StartMenuThemeController.expandThemeColors === 'function') {
+                applyThemeCss(doc, {
+                    id: def.id,
+                    name: def.name,
+                    colors: toolset.StartMenuThemeController.expandThemeColors(def.colors, DEFAULT_THEME_PACK)
+                });
+            } else {
+                applyThemeCss(doc, { id: def.id, name: def.name, colors: def.colors });
+            }
+        }
         const m = calcUiMetrics();
         const z = publishZLayers();
         publishUiMetrics(m);

@@ -38,25 +38,7 @@
         '324': 'SC'
     });
     const MONTH_EN3 = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-    const BASE_Z = 0;
-    const DEFAULT_Z_LAYERS = Object.freeze({
-        basePage: BASE_Z + 0,
-        backgroundCover: BASE_Z + 1000,
-        mainFunctionView: BASE_Z + 5000,
-        functionButton: BASE_Z + 6000,
-        searchControls: BASE_Z + 9000,
-        floatingButton: BASE_Z + 10000
-    });
-    const THEME2_FALLBACK_COLORS = Object.freeze({
-        overlayBackdrop: '0.4',
-        majorFocus: '#3f89d0',
-        minorFocus: '#8fb1cc',
-        minorFont: '#FFFFFF',
-        majorFont: '#111111',
-        majorButton: '#dfe6ee',
-        inputBackground: '#f8f9fa',
-        minorButton: '#8cc7e8'
-    });
+    const TOOLSET_GLOBAL_KEY = '__tmkUiToolset';
     const state = {
         page: null,
         mode: 'modern',
@@ -81,9 +63,17 @@
     };
 
 
+    // 沿 parent 向上查找 id=content_frame：业务可能在 content_frame 内再嵌一层 iframe
     function isContentFrame() {
         try {
-            return window.frameElement && window.frameElement.id === 'content_frame';
+            let w = window;
+            while (w && w !== w.top) {
+                const fe = w.frameElement;
+                if (fe && fe.id === 'content_frame') return true;
+                w = w.parent;
+            }
+            if (!window.frameElement && document.getElementById('content_1')) return true;
+            return false;
         } catch (e) {
             return false;
         }
@@ -104,72 +94,53 @@
     }
 
 
-    function themeColorVarFromKey(key) {
-        return '--tmk-c-' + String(key).replace(/([A-Z])/g, '-$1').toLowerCase();
+    function resolveToolset() {
+        const topToolset = (function() {
+            try {
+                return window.top && window.top[TOOLSET_GLOBAL_KEY];
+            } catch (e) {
+                return null;
+            }
+        })();
+        if (topToolset && typeof topToolset === 'object') return topToolset;
+        if (window[TOOLSET_GLOBAL_KEY] && typeof window[TOOLSET_GLOBAL_KEY] === 'object') return window[TOOLSET_GLOBAL_KEY];
+        return null;
     }
 
 
     function applyThemeVars(colors) {
-        if (!document.documentElement || !colors) return;
-        Object.keys(colors).forEach((k) => {
-            const v = colors[k];
-            if (v === undefined || v === null || String(v) === '') return;
-            document.documentElement.style.setProperty(themeColorVarFromKey(k), String(v));
-        });
+        const toolset = resolveToolset();
+        if (!toolset || !toolset.ThemeVarToolset || typeof toolset.ThemeVarToolset.applyThemeVars !== 'function') return;
+        toolset.ThemeVarToolset.applyThemeVars(document, colors);
     }
 
 
     function ensureTheme2Applied() {
-        let uiColors = null;
-        try {
-            if (window.top && window.top.__tmkTheme && window.top.__tmkTheme.colors) {
-                uiColors = window.top.__tmkTheme.colors;
-            }
-        } catch (e) {}
-        if (!uiColors) {
-            try {
-                if (window.__tmkTheme && window.__tmkTheme.colors) {
-                    uiColors = window.__tmkTheme.colors;
-                }
-            } catch (e) {}
-        }
-        // 方案B：优先复用 BCheckWeb_UI 已发布的主题变量，避免在此脚本重复“二次展开/二次计算”
-        const finalColors = Object.assign({}, THEME2_FALLBACK_COLORS, uiColors || {});
-        applyThemeVars(finalColors);
-    }
-
-
-    function normalizeZLayers(raw) {
-        const out = Object.assign({}, DEFAULT_Z_LAYERS);
-        if (!raw || typeof raw !== 'object') return out;
-        Object.keys(DEFAULT_Z_LAYERS).forEach((k) => {
-            const v = Number(raw[k]);
-            if (Number.isFinite(v)) out[k] = v;
-        });
-        return out;
+        const toolset = resolveToolset();
+        if (!toolset || !toolset.StartMenuThemeController || typeof toolset.StartMenuThemeController.getMergedThemeColors !== 'function') return;
+        const fallback = typeof toolset.StartMenuThemeController.getDefaultFallbackColors === 'function'
+            ? toolset.StartMenuThemeController.getDefaultFallbackColors()
+            : {};
+        applyThemeVars(toolset.StartMenuThemeController.getMergedThemeColors(fallback));
     }
 
 
     function getSharedZLayers() {
+        const toolset = resolveToolset();
+        if (toolset && typeof toolset.getSharedZLayers === 'function') {
+            return toolset.getSharedZLayers();
+        }
         try {
-            if (window.top && window.top.__tmkZLayers) return normalizeZLayers(window.top.__tmkZLayers);
+            if (window.top && window.top.__tmkZLayers) return window.top.__tmkZLayers;
         } catch (e) {}
-        if (window.__tmkZLayers) return normalizeZLayers(window.__tmkZLayers);
-        return normalizeZLayers(null);
+        if (window.__tmkZLayers) return window.__tmkZLayers;
+        return {};
     }
 
 
     // 与 BCheckWeb_UI publishZLayers 的 __tmkZLayers 一致；毛玻璃用 backgroundCover，其余交互控件用 mainFunctionView
     function getScopedZLayers() {
         return getSharedZLayers();
-    }
-
-
-    function shouldCloseForUiOverlay() {
-        try {
-            if (window.top && window.top.__tmkUiOverlayOpen === true) return true;
-        } catch (e) {}
-        return window.__tmkUiOverlayOpen === true;
     }
 
 
@@ -265,6 +236,13 @@
 
     function injectSharedLqv2Style() {
         if (!document.head || document.getElementById(STYLE_ID)) return;
+        const toolset = resolveToolset();
+        if (toolset && toolset.OverlayButtonStyleToolset && typeof toolset.OverlayButtonStyleToolset.applyVars === 'function') {
+            toolset.OverlayButtonStyleToolset.applyVars(document);
+        }
+        if (toolset && toolset.OverlayInputStyleToolset && typeof toolset.OverlayInputStyleToolset.applyVars === 'function') {
+            toolset.OverlayInputStyleToolset.applyVars(document);
+        }
         const z = getScopedZLayers();
         const style = document.createElement('style');
         style.id = STYLE_ID;
@@ -320,18 +298,23 @@
                 font-size: 17px;
                 cursor: pointer;
             }
-            #${WRAP_ID} .tmk-submit {
+            ${toolset && toolset.OverlayInputStyleToolset ? toolset.OverlayInputStyleToolset.getCss(['#' + WRAP_ID, '#' + SHELL_ID]) : ''}
+            #${WRAP_ID} .tmk-submit,
+            #${SHELL_ID} .tmk-submit {
                 margin-top: 22px;
                 width: 100%;
                 min-height: 46px;
-                border: 1px solid var(--tmk-c-major-focus);
-                border-radius: 10px;
-                background: var(--tmk-c-major-focus);
-                color: var(--tmk-c-lv1-fg);
-                font-size: 20px;
-                font-weight: 600;
+                border: 1px solid var(--tmk-btn-primary-border-color, var(--tmk-c-major-focus));
+                border-radius: var(--tmk-btn-primary-radius, 10px);
+                background: var(--tmk-btn-primary-bg, var(--tmk-c-major-focus));
+                color: var(--tmk-btn-primary-fg, var(--tmk-c-lv1-fg));
+                font-size: var(--tmk-btn-font-size, 20px);
+                font-weight: var(--tmk-btn-font-weight, 700);
                 cursor: pointer;
+                box-shadow: var(--tmk-btn-shadow, 0 3px 10px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(0, 0, 0, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.06));
             }
+            /* 统一 toolbar 按钮样式 */
+            ${toolset && toolset.OverlayButtonStyleToolset ? toolset.OverlayButtonStyleToolset.getToolbarButtonCss() : ''}
         `;
         document.head.appendChild(style);
     }
@@ -356,26 +339,14 @@
                 --tmk-step2-small: ${m.small}px;
                 --tmk-step2-gap: ${m.gap}px;
                 --tmk-step2-big-tile: ${m.bigTile}px;
+                --tmk-tile-shadow-pressed: none;
+                --tmk-tile-shadow-big: 0 0 0 1px rgba(0,0,0,0.28), 0 8px 0 rgba(0,0,0,0.22), 0 8px 0 rgba(0,0,0,0.12), 0 18px 22px rgba(15,23,42,0.38);
+                --tmk-tile-shadow-med: 0 0 0 1px rgba(0,0,0,0.26), 0 6px 0 rgba(0,0,0,0.2), 0 6px 0 rgba(0,0,0,0.1), 0 14px 20px rgba(15,23,42,0.36);
             }
-            html.${MODE_CLASS} #content_1 {
-                min-height: 100vh;
-                box-sizing: border-box;
-            }
-            button.tmk-step2-big-tile,
-            button.tmk-step2-med-tile {
-                -webkit-appearance: none;
-                appearance: none;
-                font: inherit;
-                margin: 0;
-                cursor: pointer;
-            }
-            button.tmk-step2-big-tile {
-                text-align: left;
-            }
-            button.tmk-step2-big-tile:disabled,
-            button.tmk-step2-med-tile:disabled {
-                cursor: not-allowed;
-            }
+            html.${MODE_CLASS} #content_1 { min-height: 100vh; box-sizing: border-box; }
+            button.tmk-step2-tile { -webkit-appearance: none; appearance: none; font: inherit; margin: 0; cursor: pointer; }
+            button.tmk-step2-tile:disabled { cursor: not-allowed; }
+            button.tmk-step2-big-tile { text-align: left; }
             .${MODE_CLASS} #wtAjaxSearch {
                 display: none !important;
             }
@@ -411,6 +382,17 @@
                 backdrop-filter: blur(8px);
                 -webkit-backdrop-filter: blur(8px);
             }
+            #${SHELL_ID} input,
+            #${SHELL_ID} select,
+            #${SHELL_ID} textarea {
+                border: 1px solid var(--tmk-ctl-border-color, var(--tmk-c-search-input-border));
+                border-radius: var(--tmk-ctl-radius, 8px);
+                background: var(--tmk-ctl-bg, var(--tmk-c-input-background));
+                color: var(--tmk-ctl-fg, var(--tmk-c-major-font));
+                min-height: var(--tmk-ctl-min-h, 34px);
+                padding: var(--tmk-ctl-pad-y, 6px) var(--tmk-ctl-pad-x, 10px);
+                box-sizing: border-box;
+            }
             #tmk-step2-rows {
                 display: flex;
                 flex-direction: column;
@@ -423,57 +405,35 @@
                 gap: ${m.gap}px;
                 flex-wrap: wrap;
             }
+            .tmk-step2-tile {
+                box-sizing: border-box;
+                border-radius: 8px;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                transition: box-shadow 0.15s ease, transform 0.15s ease, outline 0.15s ease;
+            }
+            .tmk-step2-tile:not(.tmk-step2-tile--pressed):not(:disabled) { transform: translateY(-4px); }
+            .tmk-step2-tile:not(.tmk-step2-tile--pressed):not(:disabled).tmk-step2-big-tile { box-shadow: var(--tmk-tile-shadow-big); }
+            .tmk-step2-tile.tmk-step2-tile--pressed { box-shadow: var(--tmk-tile-shadow-pressed); transform: translateY(0); }
             .tmk-step2-big-tile {
                 width: var(--tmk-step2-big-tile);
                 height: var(--tmk-step2-medium);
                 min-width: var(--tmk-step2-big-tile);
                 min-height: var(--tmk-step2-medium);
                 max-width: 100%;
-                box-sizing: border-box;
-                border-radius: 8px;
                 border: 2px solid rgba(0,0,0,0.12);
-                display: flex;
-                flex-direction: column;
                 justify-content: flex-start;
                 gap: 6px;
                 padding: 8px;
                 font-size: ${Math.max(10, Math.round(m.small * 0.22))}px;
                 line-height: 1.25;
-                overflow: hidden;
-                transition: box-shadow 0.15s ease, transform 0.15s ease, outline 0.15s ease;
             }
-            .tmk-step2-big-tile:not(.tmk-step2-tile--pressed):not(:disabled) {
-                box-shadow:
-                    0 0 0 1px rgba(0, 0, 0, 0.28),
-                    0 8px 0 rgba(0, 0, 0, 0.22),
-                    0 8px 0 rgba(0, 0, 0, 0.12),
-                    0 18px 22px rgba(15, 23, 42, 0.38);
-                transform: translateY(-4px);
-            }
-            .tmk-step2-big-tile.tmk-step2-tile--pressed {
-                box-shadow: none;
-                transform: translateY(0);
-            }
-            .tmk-step2-big-tile.tmk-step2-tile--detail.tmk-step2-tile--pressed {
-                outline: 2px solid #2563eb;
-                outline-offset: 1px;
-            }
-            .tmk-step2-big-tile--lax {
-                background: rgba(40, 167, 69, 0.18);
-                border-color: rgba(25, 135, 84, 0.55);
-            }
-            .tmk-step2-big-tile--nolax {
-                background: rgba(255, 193, 7, 0.22);
-                border-color: rgba(200, 150, 0, 0.55);
-            }
-            .tmk-step2-big-tile--gray {
-                background: rgba(108, 117, 125, 0.28);
-                border-color: rgba(73, 80, 87, 0.5);
-                opacity: 0.9;
-            }
-            .tmk-step2-big-tile--bs {
-                box-shadow: 0 0 0 2px rgba(253, 126, 20, 0.85) inset;
-            }
+            .tmk-step2-big-tile.tmk-step2-tile--detail.tmk-step2-tile--pressed { outline: 2px solid #2563eb; outline-offset: 1px; }
+            .tmk-step2-tile--lax { background: rgba(40,167,69,0.18); border-color: rgba(25,135,84,0.55); }
+            .tmk-step2-tile--nolax { background: rgba(255,193,7,0.22); border-color: rgba(200,150,0,0.55); }
+            .tmk-step2-tile--gray { background: rgba(108,117,125,0.28); border-color: rgba(73,80,87,0.5); opacity: 0.9; }
+            .tmk-step2-tile--bs { box-shadow: 0 0 0 2px rgba(253,126,20,0.85) inset; }
             .tmk-step2-flight-title {
                 font-weight: 700;
                 color: #0d1b2a;
@@ -504,46 +464,15 @@
                 height: var(--tmk-step2-medium);
                 min-width: var(--tmk-step2-medium);
                 min-height: var(--tmk-step2-medium);
-                box-sizing: border-box;
-                border-radius: 8px;
                 border: 2px solid rgba(0,0,0,0.1);
-                display: flex;
-                flex-direction: column;
                 justify-content: center;
                 align-items: center;
                 text-align: center;
                 padding: 6px;
                 font-size: ${Math.max(10, Math.round(m.small * 0.22))}px;
                 line-height: 1.2;
-                transition: box-shadow 0.15s ease, transform 0.15s ease;
             }
-            .tmk-step2-med-tile:not(.tmk-step2-tile--pressed):not(:disabled) {
-                box-shadow:
-                    0 0 0 1px rgba(0, 0, 0, 0.26),
-                    0 6px 0 rgba(0, 0, 0, 0.2),
-                    0 6px 0 rgba(0, 0, 0, 0.1),
-                    0 14px 20px rgba(15, 23, 42, 0.36);
-                transform: translateY(-2px);
-            }
-            .tmk-step2-med-tile.tmk-step2-tile--pressed {
-                box-shadow: none;
-                transform: translateY(0);
-            }
-            .tmk-step2-med-tile--lax {
-                background: rgba(25, 135, 84, 0.42);
-                border-color: rgba(15, 90, 50, 0.65);
-                color: #fff;
-            }
-            .tmk-step2-med-tile--nolax {
-                background: rgba(200, 140, 0, 0.45);
-                border-color: rgba(160, 100, 0, 0.6);
-                color: #1a1200;
-            }
-            .tmk-step2-med-tile--gray {
-                background: rgba(108, 117, 125, 0.45);
-                border-color: rgba(73, 80, 87, 0.55);
-                color: #f8f9fa;
-            }
+            .tmk-step2-tile:not(.tmk-step2-tile--pressed):not(:disabled).tmk-step2-med-tile { box-shadow: var(--tmk-tile-shadow-med); transform: translateY(-2px); }
             #tmk-step2-selection-summary {
                 margin-top: ${m.gap}px;
                 padding: 4px 0;
@@ -576,13 +505,14 @@
             .tmk-step2-footer-new {
                 min-height: ${Math.max(36, Math.round(m.small * 0.65))}px;
                 padding: 8px 20px;
-                border-radius: 8px;
-                border: none;
-                background: #28a745;
-                color: #fff;
-                font-size: ${Math.max(14, Math.round(m.small * 0.34))}px;
-                font-weight: 700;
+                border-radius: var(--tmk-btn-primary-radius, 10px);
+                border: 1px solid var(--tmk-btn-primary-border-color, var(--tmk-c-major-focus));
+                background: var(--tmk-btn-primary-bg, var(--tmk-c-major-focus));
+                color: var(--tmk-btn-primary-fg, var(--tmk-c-lv1-fg));
+                font-size: max(${Math.max(14, Math.round(m.small * 0.34))}px, var(--tmk-btn-font-size, 20px));
+                font-weight: var(--tmk-btn-font-weight, 700);
                 cursor: pointer;
+                box-shadow: var(--tmk-btn-shadow, 0 3px 10px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(0, 0, 0, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.06));
             }
             .tmk-step2-h2-dep {
                 margin: 0 0 ${Math.round(m.gap * 0.75)}px 0;
@@ -641,7 +571,7 @@
     function updateToolbar() {
         const toolbar = document.getElementById(TOOLBAR_ID);
         if (!toolbar) return;
-        toolbar.querySelectorAll('.tmk-lqv2-btn').forEach((btn) => {
+        toolbar.querySelectorAll('.tmk-toolbar-btn').forEach((btn) => {
             const active = btn.getAttribute('data-mode') === state.mode;
             btn.classList.toggle('tmk-active', active);
         });
@@ -695,8 +625,8 @@
         toolbar.id = TOOLBAR_ID;
         toolbar.className = 'tmk-shared-toolbar';
         toolbar.innerHTML = `
-            <button class="tmk-lqv2-btn tmk-shared-toolbar-btn tmk-active" data-mode="modern" type="button">我的视图</button>
-            <button class="tmk-lqv2-btn tmk-shared-toolbar-btn" data-mode="legacy" type="button">原版页面</button>
+            <button class="tmk-toolbar-btn tmk-active" data-mode="modern" type="button">我的视图</button>
+            <button class="tmk-toolbar-btn" data-mode="legacy" type="button">原版页面</button>
         `;
         document.body.appendChild(toolbar);
         toolbar.addEventListener('click', (event) => {
@@ -1329,6 +1259,30 @@
     }
 
 
+    function getTileModifierClass(delY, rowLaxDest, hasLaxSeg) {
+        if (delY || !rowLaxDest) return '--gray';
+        if (hasLaxSeg) return '--lax';
+        return '--nolax';
+    }
+
+
+    function createTileButton(type, opts) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'tmk-step2-tile tmk-step2-' + type + '-tile';
+        const modifier = getTileModifierClass(opts.delY, opts.rowLaxDest, opts.hasLaxSeg);
+        btn.classList.add('tmk-step2-tile' + modifier);
+        btn.disabled = !!opts.delY;
+        if (opts.isPressed !== undefined) {
+            btn.classList.toggle('tmk-step2-tile--pressed', !!opts.isPressed);
+        }
+        if (opts.isDetail !== undefined) {
+            btn.classList.toggle('tmk-step2-tile--detail', !!opts.isDetail);
+        }
+        return btn;
+    }
+
+
     function renderSegmentRows(shell) {
         const rowsRoot = el('tmk-step2-rows');
         if (!rowsRoot) return;
@@ -1353,19 +1307,7 @@
             row.className = 'tmk-step2-seg-row';
             const blockCb = block.querySelector('input[name="eXLgSelect"]');
             const rad = block.querySelector('input[name="lgSelect"]');
-            const big = document.createElement('button');
-            big.type = 'button';
-            big.className = 'tmk-step2-big-tile';
-            if (delY || !rowLaxDest) {
-                big.classList.add('tmk-step2-big-tile--gray');
-            } else if (hasLaxSeg) {
-                big.classList.add('tmk-step2-big-tile--lax');
-            } else {
-                big.classList.add('tmk-step2-big-tile--nolax');
-            }
-            big.classList.toggle('tmk-step2-tile--pressed', !!(blockCb && blockCb.checked));
-            big.classList.toggle('tmk-step2-tile--detail', !!(rad && rad.checked));
-            big.disabled = !!delY;
+            const big = createTileButton('big', { delY, rowLaxDest, hasLaxSeg, isPressed: !!(blockCb && blockCb.checked), isDetail: !!(rad && rad.checked) });
             const ft = document.createElement('div');
             ft.className = 'tmk-step2-flight-title';
             fillFlightTitleBlock(ft, fl);
@@ -1375,10 +1317,7 @@
                 big.addEventListener('click', function(e) {
                     if (delY || !blockCb) return;
                     if (e.detail >= 2) {
-                        if (timer) {
-                            clearTimeout(timer);
-                            timer = null;
-                        }
+                        if (timer) { clearTimeout(timer); timer = null; }
                         return;
                     }
                     if (timer) clearTimeout(timer);
@@ -1391,17 +1330,11 @@
                 });
                 big.addEventListener('dblclick', function(e) {
                     e.preventDefault();
-                    if (timer) {
-                        clearTimeout(timer);
-                        timer = null;
-                    }
+                    if (timer) { clearTimeout(timer); timer = null; }
                     if (delY || !blockCb || !rad) return;
                     const all = document.querySelectorAll('input[name="lgSelect"]');
                     for (let j = 0; j < all.length; j++) all[j].checked = false;
-                    if (!blockCb.checked) {
-                        blockCb.click();
-                        triggerJqChange(blockCb);
-                    }
+                    if (!blockCb.checked) { blockCb.click(); triggerJqChange(blockCb); }
                     rad.click();
                     triggerJqChange(rad);
                     if (state.shell) scheduleSync(state.shell);
@@ -1412,18 +1345,7 @@
             const bagRows = getBaggageRows(block, bi);
             for (let r = 0; r < bagRows.length; r++) {
                 const item = bagRows[r];
-                const st = document.createElement('button');
-                st.type = 'button';
-                st.className = 'tmk-step2-med-tile';
-                if (delY || !rowLaxDest) {
-                    st.classList.add('tmk-step2-med-tile--gray');
-                } else if (hasLaxSeg) {
-                    st.classList.add('tmk-step2-med-tile--lax');
-                } else {
-                    st.classList.add('tmk-step2-med-tile--nolax');
-                }
-                st.classList.toggle('tmk-step2-tile--pressed', !!item.checkbox.checked);
-                st.disabled = !!delY;
+                const st = createTileButton('med', { delY, rowLaxDest, hasLaxSeg, isPressed: !!item.checkbox.checked });
                 const numEl = el('lgInfo_baggageInfoList_' + bi + '_baggageNum_' + item.index);
                 const lineA = document.createElement('div');
                 lineA.style.fontWeight = '700';
