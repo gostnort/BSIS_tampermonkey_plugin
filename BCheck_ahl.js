@@ -18,7 +18,6 @@
     const INIT_FLAG = '__tmkPnrInit';
     const STYLE_ID = 'tmk-pnr-style';
     const GLASS_ID = 'tmk-pnr-glass';
-    const TOOLBAR_ID = 'tmk-pnr-toolbar';
     const SHELL_ID = 'tmk-pnr-shell';
     const STAGE_ID = 'tmk-pnr-stage';
     const STEPPER_BAR_ID = 'tmk-pnr-stepper-bar';
@@ -55,12 +54,11 @@
         quickReady: false,
         detailSyncTimer: null,
         mirrorPageRefs: {},
-        mirrorControlPairs: {}
+        mirrorControlPairs: {},
+        viewSwitchCtl: null
     };
     if (!PAGE_RE.test(String(window.location.href || ''))) return;
     if (!isContentFrame()) return;
-    if (window[INIT_FLAG]) return;
-    window[INIT_FLAG] = true;
 
 
     function resolveToolset() {
@@ -75,6 +73,23 @@
         if (window[TOOLSET_GLOBAL_KEY] && typeof window[TOOLSET_GLOBAL_KEY] === 'object') return window[TOOLSET_GLOBAL_KEY];
         return null;
     }
+
+
+    // ViewSwitch 控件在 toolset 中的脚本键（与 ViewSwitch.SCRIPT_DOM_ID 对齐）
+    const VIEW_SWITCH_SCRIPT_KEY = 'ahlPnr';
+
+
+    function ahlViewSwitchDomId() {
+        const ts = resolveToolset();
+        return ts && ts.ViewSwitch && typeof ts.ViewSwitch.domIdForScript === 'function' ? ts.ViewSwitch.domIdForScript(VIEW_SWITCH_SCRIPT_KEY) : '';
+    }
+
+
+    const tsGate = resolveToolset();
+    const scriptGate = tsGate && tsGate.ScriptGate;
+    if (!scriptGate || typeof scriptGate.mayRunAhl !== 'function' || !scriptGate.mayRunAhl()) return;
+    if (window[INIT_FLAG]) return;
+    window[INIT_FLAG] = true;
 
 
     function getSharedZLayers() {
@@ -501,10 +516,15 @@
     function mountStage() {
         if (document.getElementById(STAGE_ID)) return;
         if (!document.body) return;
+        const ts = resolveToolset();
+        const DeckApi = ts && ts.Deck;
+        if (!DeckApi || typeof DeckApi.ensure !== 'function') return;
+        const root = DeckApi.ensure(document);
+        if (!root) return;
         const stage = document.createElement('div');
         stage.id = STAGE_ID;
         stage.className = 'tmk-pnr-stage';
-        document.body.appendChild(stage);
+        root.appendChild(stage);
         [1, 2, 3, 4, 5, 6, 7].forEach(function(pageNo) {
             renderMirrorPage(pageNo);
         });
@@ -938,9 +958,6 @@
         const label = document.getElementById(id);
         if (!label || !text) return;
         label.textContent = text;
-        try {
-            console.log('[tmk-lostform-v2] newLabel', id, '=>', text);
-        } catch (e) {}
     }
 
 
@@ -1296,8 +1313,6 @@
             'html.' + MODE_CLASS + ' #' + STAGE_ID + ' { display: none !important; }',
             'html.' + MODE_CLASS + ' #' + STAGE_ID + '.tmk-pnr-stage--on { display: block !important; }',
             'html.' + MODE_CLASS + ' #' + STEPPER_BAR_ID + ' { display: block !important; }',
-            '#' + TOOLBAR_ID + ' { z-index: ' + z.mainFunctionView + '; }',
-            toolset && toolset.OverlayButtonStyleToolset ? toolset.OverlayButtonStyleToolset.getToolbarButtonCss() : '',
             '#' + STEPPER_BAR_ID + ' {',
             '  display: none;',
             '  position: fixed;',
@@ -1641,62 +1656,66 @@
             '}',
             'html.' + MODE_CLASS + ' .' + STEP2_FIELD_WIDE_CLASS + ' {',
             '  grid-column: 1 / -1;',
-            '}',
-            '#' + TOOLBAR_ID + '.tmk-ui-hidden,',
-            '#' + STEPPER_BAR_ID + '.tmk-ui-hidden,',
-            '#' + SHELL_ID + '.tmk-ui-hidden,',
-            '#' + STAGE_ID + '.tmk-ui-hidden,',
-            '#' + GLASS_ID + '.tmk-ui-hidden {',
-            '  display: none !important;',
             '}'
         ].join('\n');
         document.head.appendChild(style);
+        if (toolset && toolset.ChromeStack && typeof toolset.ChromeStack.injectHideWhenClassRule === 'function') {
+            toolset.ChromeStack.injectHideWhenClassRule(document, {
+                styleId: 'tmk-pnr-ui-hidden-group',
+                viewSwitchScriptKey: VIEW_SWITCH_SCRIPT_KEY,
+                otherElementIds: [STEPPER_BAR_ID, SHELL_ID, STAGE_ID, GLASS_ID]
+            });
+        }
     }
 
 
     // 功能：创建并挂载背景毛玻璃层。
     function mountGlassLayer() {
         if (!document.body) return;
+        const ts = resolveToolset();
+        const DeckApi = ts && ts.Deck;
+        if (!DeckApi || typeof DeckApi.ensure !== 'function') return;
+        const root = DeckApi.ensure(document);
+        if (!root) return;
         let el = document.getElementById(GLASS_ID);
         if (!el) {
             el = document.createElement('div');
             el.id = GLASS_ID;
             el.className = 'tmk-glass-backdrop';
             el.style.zIndex = getSharedZLayers().backgroundCover;
-            document.body.appendChild(el);
+            root.appendChild(el);
+        } else if (typeof DeckApi.adopt === 'function') {
+            DeckApi.adopt(document, GLASS_ID);
         }
         state.glass = el;
     }
 
 
     // 功能：渲染覆盖层显示/隐藏切换入口。
-    function renderToolbar() {
-        if (!document.body || document.getElementById(TOOLBAR_ID)) return;
-        const bar = document.createElement('div');
-        bar.id = TOOLBAR_ID;
-        bar.className = 'tmk-shared-toolbar';
-        bar.innerHTML =
-            '<button type="button" class="tmk-toolbar-btn tmk-active" data-tmk-ui="on">我的视图</button>' +
-            '<button type="button" class="tmk-toolbar-btn" data-tmk-ui="off">原版页面</button>';
-        document.body.appendChild(bar);
-        bar.addEventListener('click', function(ev) {
-            const t = ev.target;
-            if (!t || !t.getAttribute) return;
-            const v = t.getAttribute('data-tmk-ui');
-            if (!v) return;
-            setUiVisible(v === 'on');
+    function renderViewSwitch() {
+        if (!document.body) return;
+        const ts = resolveToolset();
+        const DeckApi = ts && ts.Deck;
+        const Vs = ts && ts.ViewSwitch;
+        if (!DeckApi || typeof DeckApi.ensure !== 'function') return;
+        if (!Vs || typeof Vs.mountForScript !== 'function') return;
+        const root = DeckApi.ensure(document);
+        if (!root) return;
+        state.viewSwitchCtl = Vs.mountForScript(document, VIEW_SWITCH_SCRIPT_KEY, {
+            container: root,
+            initialMyView: state.uiVisible,
+            onMyViewChange: function(isModern) {
+                setUiVisible(isModern);
+            }
         });
     }
 
 
-    // 功能：同步工具栏按钮选中态。
-    function updateToolbarButtons() {
-        const bar = document.getElementById(TOOLBAR_ID);
-        if (!bar) return;
-        bar.querySelectorAll('.tmk-toolbar-btn').forEach(function(btn) {
-            const on = btn.getAttribute('data-tmk-ui') === (state.uiVisible ? 'on' : 'off');
-            btn.classList.toggle('tmk-active', on);
-        });
+    // 功能：同步视图切换条选中态。
+    function updateViewSwitchButtons() {
+        if (state.viewSwitchCtl) {
+            state.viewSwitchCtl.myView = state.uiVisible;
+        }
     }
 
 
@@ -1987,8 +2006,10 @@
     function setUiVisible(visible) {
         state.uiVisible = visible !== false;
         function readOverlayRefs() {
+            const tb =
+                state.viewSwitchCtl && state.viewSwitchCtl.root ? state.viewSwitchCtl.root : document.getElementById(ahlViewSwitchDomId());
             return [
-                document.getElementById(TOOLBAR_ID),
+                tb,
                 document.getElementById(STEPPER_BAR_ID),
                 document.getElementById(SHELL_ID),
                 document.getElementById(STAGE_ID),
@@ -2009,11 +2030,14 @@
             document.documentElement.classList.remove('tmk-pnr-hide-native-nav');
             if (state.glass) state.glass.style.display = 'none';
             readOverlayRefs().forEach(function(el) {
-                if (el && el.id !== TOOLBAR_ID) el.classList.add('tmk-ui-hidden');
+                if (!el) return;
+                const tr = state.viewSwitchCtl && state.viewSwitchCtl.root;
+                if (tr && (el === tr || el.id === tr.id)) return;
+                el.classList.add('tmk-ui-hidden');
             });
             applyPaneVisibility();
         }
-        updateToolbarButtons();
+        updateViewSwitchButtons();
     }
 
 
@@ -2056,21 +2080,34 @@
     function mount() {
         injectStyles();
         mountGlassLayer();
-        renderToolbar();
+        renderViewSwitch();
         applyLeftGap();
         if (document.getElementById(SHELL_ID)) {
+            const dk = resolveToolset().Deck;
+            if (dk && typeof dk.adopt === 'function') {
+                dk.adopt(document, SHELL_ID);
+                dk.adopt(document, STEPPER_BAR_ID);
+                dk.adopt(document, ahlViewSwitchDomId());
+                dk.adopt(document, GLASS_ID);
+            }
             mountStage();
+            const ts = resolveToolset();
+            const G = ts && ts.ScriptGate;
+            if (G && typeof G.finishAhlEnter === 'function') G.finishAhlEnter();
             return true;
         }
+        const deck = resolveToolset().Deck;
+        const deckRoot = deck && typeof deck.ensure === 'function' ? deck.ensure(document) : null;
+        if (!deckRoot) return false;
         const stepBar = document.createElement('div');
         stepBar.id = STEPPER_BAR_ID;
         stepBar.className = 'tmk-pnr-stepper-bar';
         stepBar.innerHTML = buildStepperHtml();
-        document.body.appendChild(stepBar);
+        deckRoot.appendChild(stepBar);
         const shell = document.createElement('div');
         shell.id = SHELL_ID;
         shell.innerHTML = buildQuickHtml();
-        document.body.appendChild(shell);
+        deckRoot.appendChild(shell);
         state.shell = shell;
         mountStage();
         if (!document.getElementById(QUICK_FILL_FAB_ID)) {
@@ -2127,6 +2164,9 @@
         });
         window.addEventListener('load', applyShellOffset);
         setTimeout(applyShellOffset, 100);
+        const ts = resolveToolset();
+        const G = ts && ts.ScriptGate;
+        if (G && typeof G.finishAhlEnter === 'function') G.finishAhlEnter();
         return true;
     }
 

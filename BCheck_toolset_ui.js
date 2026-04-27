@@ -24,7 +24,8 @@
         searchControls: BASE_Z + 9000,
         floatingButton: BASE_Z + 10000
     });
-    const STARTMENU_THEME_FALLBACK_COLORS = Object.freeze({
+    // 默认调色板（唯一色值来源）；startmenu 注入 #tmk-theme-vars 后 --tmk-c-* 优先，CSS 里 var(..., DEFAULT_THEME.x) 仅作未定义时的回退
+    const DEFAULT_THEME = Object.freeze({
         overlayBackdrop: '0.4',
         majorFocus: '#3f89d0',
         minorFocus: '#8fb1cc',
@@ -273,7 +274,7 @@
             return Object.assign({}, base, uiColors || {});
         }
         static getDefaultFallbackColors() {
-            return Object.assign({}, STARTMENU_THEME_FALLBACK_COLORS);
+            return Object.assign({}, DEFAULT_THEME);
         }
     }
     class OverlayButtonStyleToolset {
@@ -293,32 +294,100 @@
                 '--tmk-toolbar-btn-padding': '0px 12px',
                 '--tmk-toolbar-btn-min-height': '30px',
                 '--tmk-toolbar-btn-radius': '999px',
-                '--tmk-toolbar-btn-font-size': '14px'
+                '--tmk-toolbar-btn-font-size': '14px',
+                '--tmk-vsw-top': '20px',
+                '--tmk-vsw-right': '20px'
             };
         }
-        static getToolbarButtonCss() {
+        static getButtonBaseCss() {
             return `
-                .tmk-toolbar-btn {
-                    display: block;
-                    padding: var(--tmk-toolbar-btn-padding, 0px 12px);
-                    min-height: var(--tmk-toolbar-btn-min-height, 30px);
-                    border-radius: var(--tmk-toolbar-btn-radius, 999px);
-                    border: 1px solid var(--tmk-c-minor-focus, #8fb1cc);
-                    background: var(--tmk-c-major-button, #dfe6ee);
-                    color: var(--tmk-c-major-font, #111111);
-                    font-size: var(--tmk-toolbar-btn-font-size, 14px);
+                .tmk-btn {
+                    margin: 0;
+                    box-sizing: border-box;
+                    font-family: inherit;
                     cursor: pointer;
-                    font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif;
-                }
-                .tmk-toolbar-btn.tmk-active {
-                    background: var(--tmk-c-major-focus, #3f89d0);
-                    border-color: var(--tmk-c-major-focus, #3f89d0);
-                    color: var(--tmk-c-lv1-fg, #ffffff);
-                }
-                .tmk-toolbar-btn:hover:not(.tmk-active) {
-                    background: var(--tmk-c-minor-focus, #8fb1cc);
                 }
             `;
+        }
+        static getViewSwitchCss() {
+            const vMajorFocus = ThemeVarToolset.themeColorVarFromKey('majorFocus');
+            const vMinorButton = ThemeVarToolset.themeColorVarFromKey('minorButton');
+            const vMajorFont = ThemeVarToolset.themeColorVarFromKey('majorFont');
+            return `
+                .tmk-sw {
+                    position: fixed;
+                    right: var(--tmk-vsw-right, 20px);
+                    left: auto;
+                    top: var(--tmk-vsw-top, 20px);
+                    display: inline-flex;
+                    flex-direction: row;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 8px 14px;
+                    background: rgba(255, 255, 255, 0.5);
+                    border: none;
+                    border-radius: 12px;
+                    box-sizing: border-box;
+                    cursor: pointer;
+                    user-select: none;
+                    font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif;
+                }
+                .tmk-sw .tmk-l,
+                .tmk-sw .tmk-r {
+                    margin: 0;
+                    padding: 0;
+                    background: transparent;
+                    border: none;
+                    font-size: 14px;
+                    color: var(${vMajorFont}, ${DEFAULT_THEME.majorFont});
+                    white-space: nowrap;
+                    opacity: 0.55;
+                    pointer-events: none;
+                }
+                .tmk-sw.tmk-modern .tmk-l {
+                    opacity: 1;
+                    font-weight: 700;
+                }
+                .tmk-sw.tmk-legacy .tmk-r {
+                    opacity: 1;
+                    font-weight: 700;
+                }
+                .tmk-sw .tmk-tr {
+                    position: relative;
+                    width: 44px;
+                    height: 22px;
+                    flex-shrink: 0;
+                    border-radius: 11px;
+                    pointer-events: none;
+                }
+                .tmk-sw.tmk-modern .tmk-tr {
+                    background: var(${vMajorFocus}, ${DEFAULT_THEME.majorFocus});
+                }
+                .tmk-sw.tmk-legacy .tmk-tr {
+                    background: var(${vMinorButton}, ${DEFAULT_THEME.minorButton});
+                }
+                .tmk-sw .tmk-th {
+                    position: absolute;
+                    left: 2px;
+                    top: 50%;
+                    width: 18px;
+                    height: 18px;
+                    margin-top: -9px;
+                    border-radius: 50%;
+                    background: #ffffff;
+                    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22);
+                    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+                }
+                .tmk-sw.tmk-modern .tmk-th {
+                    transform: translateX(0);
+                }
+                .tmk-sw.tmk-legacy .tmk-th {
+                    transform: translateX(22px);
+                }
+            `;
+        }
+        static getToolbarButtonCss() {
+            return OverlayButtonStyleToolset.getButtonBaseCss() + OverlayButtonStyleToolset.getViewSwitchCss();
         }
         static applyVars(doc) {
             const d = doc || document;
@@ -378,9 +447,440 @@
             });
         }
     }
+    const DECK_STYLE_ID = 'tmk-deck-base-style';
+    const DECK_DOM_ID = 'tmk-deck';
+    const Deck = {
+        DOM_ID: DECK_DOM_ID,
+        injectBaseStyle: function(doc) {
+            const d = doc || document;
+            if (!d.head || d.getElementById(DECK_STYLE_ID)) return;
+            const st = d.createElement('style');
+            st.id = DECK_STYLE_ID;
+            st.textContent =
+                '#' + DECK_DOM_ID + ' { position: relative; z-index: 1; }\n';
+            d.head.appendChild(st);
+        },
+        // 现代覆层统一父节点：毛玻璃、工具栏、shell 等全部挂在此根下，避免散落在 body 第一层
+        ensure: function(doc) {
+            const d = doc || document;
+            Deck.injectBaseStyle(d);
+            if (!d.body) return null;
+            let root = d.getElementById(DECK_DOM_ID);
+            if (root) return root;
+            root = d.createElement('div');
+            root.id = DECK_DOM_ID;
+            root.className = 'tmk-deck';
+            root.setAttribute('data-tmk-role', 'modern-stack');
+            d.body.appendChild(root);
+            return root;
+        },
+        adopt: function(doc, elementId) {
+            const d = doc || document;
+            const el = d.getElementById(elementId);
+            const root = Deck.ensure(d);
+            if (!el || !root) return el;
+            if (el.parentNode !== root) root.appendChild(el);
+            return el;
+        }
+    };
+
+
+    function Control(nativeElement) {
+        if (!nativeElement || !nativeElement.nodeType) {
+            throw new Error('Control 需要有效的挂载点 nativeElement');
+        }
+        this.nativeElement = nativeElement;
+    }
+
+
+    Control.prototype.widget = function() {
+        return this.nativeElement;
+    };
+
+
+    Object.defineProperty(Control.prototype, 'el', {
+        get: function() {
+            return this.nativeElement;
+        }
+    });
+
+
+    Control.prototype.appendTo = function(parent) {
+        if (parent && parent.appendChild && this.nativeElement) parent.appendChild(this.nativeElement);
+        return this;
+    };
+
+
+    Control.prototype.setStyle = function(styles) {
+        if (!styles || typeof styles !== 'object' || !this.nativeElement) return;
+        Object.assign(this.nativeElement.style, styles);
+    };
+
+
+    Control.prototype.setVisible = function(visible) {
+        if (!this.nativeElement) return;
+        this.nativeElement.style.display = visible !== false ? '' : 'none';
+    };
+
+
+    Control.prototype.setEnabled = function(enabled) {
+        const el = this.nativeElement;
+        if (!el) return;
+        const en = enabled !== false;
+        if (typeof el.disabled === 'boolean') {
+            el.disabled = !en;
+            el.style.opacity = '';
+            el.style.pointerEvents = '';
+        } else {
+            el.setAttribute('aria-disabled', en ? 'false' : 'true');
+            el.style.pointerEvents = en ? '' : 'none';
+            el.style.opacity = en ? '1' : '0.5';
+        }
+    };
+
+
+    Control.prototype.setCssVar = function(name, value) {
+        if (!this.nativeElement || value === undefined || value === null) return;
+        let n = String(name || '').trim();
+        if (n.indexOf('--') !== 0) n = '--tmk-' + n.replace(/^\-+/, '');
+        this.nativeElement.style.setProperty(n, String(value));
+    };
+
+
+    function Button(options) {
+        options = options || {};
+        let el = options.nativeElement;
+        if (!el) {
+            el = document.createElement('button');
+            el.type = options.type || 'button';
+            let cls = 'tmk-btn';
+            if (options.className) cls += ' ' + options.className;
+            el.className = cls.trim();
+            if (options.textContent != null) el.textContent = options.textContent;
+        } else if (options.className) {
+            el.className = (el.className ? el.className + ' ' : '') + options.className;
+        }
+        Control.call(this, el);
+    }
+
+
+    Button.prototype = Object.create(Control.prototype);
+    Button.prototype.constructor = Button;
+
+
+    function Switch(options) {
+        options = options || {};
+        const el = document.createElement('div');
+        el.className = 'tmk-sw' + (options.className ? ' ' + String(options.className).trim() : '');
+        const esc = function(s) {
+            const n = document.createElement('span');
+            n.textContent = s;
+            return n.innerHTML;
+        };
+        const l = options.left != null ? '<span class="tmk-l">' + esc(String(options.left)) + '</span>' : '';
+        const r = options.right != null ? '<span class="tmk-r">' + esc(String(options.right)) + '</span>' : '';
+        el.innerHTML = l + '<div class="tmk-tr"><div class="tmk-th"></div></div>' + r;
+        el.setAttribute('role', 'group');
+        Control.call(this, el);
+        this._checked = options.checked !== undefined ? !!options.checked : true;
+        this._onToggled = typeof options.onToggled === 'function' ? options.onToggled : null;
+        this._suppress = false;
+        const self = this;
+        el.addEventListener('click', function(ev) {
+            ev.preventDefault();
+            self.checked = !self._checked;
+        });
+        this._updateUi();
+    }
+
+
+    Switch.prototype = Object.create(Control.prototype);
+    Switch.prototype.constructor = Switch;
+
+
+    Switch.prototype._updateUi = function() {
+        const el = this.nativeElement;
+        if (!el) return;
+        const mv = this._checked;
+        el.classList.toggle('tmk-modern', mv);
+        el.classList.toggle('tmk-legacy', !mv);
+    };
+
+
+    Object.defineProperty(Switch.prototype, 'checked', {
+        get: function() {
+            return this._checked;
+        },
+        set: function(val) {
+            const next = !!val;
+            if (this._checked === next) return;
+            this._checked = next;
+            this._updateUi();
+            if (this._onToggled && !this._suppress) {
+                this._onToggled(next);
+            }
+        }
+    });
+
+
+    Switch.prototype.setCheckedQuiet = function(val) {
+        this._suppress = true;
+        this.checked = !!val;
+        this._suppress = false;
+    };
+
+
+    function ViewSwitchCtl(swInstance, options) {
+        this._sw = swInstance;
+        this.root = swInstance.nativeElement;
+        this._opts = options || {};
+    }
+
+
+    Object.defineProperty(ViewSwitchCtl.prototype, 'myView', {
+        get: function() {
+            return this._sw.checked;
+        },
+        set: function(v) {
+            const next = !!v;
+            if (this._sw.checked === next) return;
+            this._sw.setCheckedQuiet(next);
+        }
+    });
+
+
+    const VIEW_SWITCH_WIDGET_STYLE_ID = 'tmk-vsw-widget-css';
+    const ViewSwitch = {
+        SCRIPT_DOM_ID: Object.freeze({
+            ahlPnr: 'tmk-pnr-vsw',
+            lostQueryV2: 'tmk-lqv2-vsw'
+        }),
+        domIdForScript: function(scriptKey) {
+            const k = String(scriptKey || '');
+            const map = ViewSwitch.SCRIPT_DOM_ID;
+            return map[k] || null;
+        },
+        mountForScript: function(doc, scriptKey, options) {
+            const vsId = ViewSwitch.domIdForScript(scriptKey);
+            if (!vsId) return null;
+            options = options || {};
+            return ViewSwitch.mount(doc, Object.assign({}, options, { viewSwitchId: vsId }));
+        },
+        injectZRule: function(doc, elementId, layerKey) {
+            const d = doc || document;
+            if (!d.head || !elementId) return;
+            const lk = layerKey !== undefined && layerKey !== null && layerKey !== '' ? String(layerKey) : 'mainFunctionView';
+            const layers = getSharedZLayers();
+            const zi = Number(layers[lk]);
+            if (!Number.isFinite(zi)) return;
+            const sid = 'tmk-z-' + String(elementId).replace(/[^a-zA-Z0-9_-]/g, '');
+            let st = d.getElementById(sid);
+            const css = '#' + elementId + ' { z-index: ' + zi + '; }\n';
+            if (!st) {
+                st = d.createElement('style');
+                st.id = sid;
+                d.head.appendChild(st);
+            }
+            st.textContent = css;
+        },
+        injectStyles: function(doc) {
+            const d = doc || document;
+            if (!d.head || d.getElementById(VIEW_SWITCH_WIDGET_STYLE_ID)) return;
+            const st = d.createElement('style');
+            st.id = VIEW_SWITCH_WIDGET_STYLE_ID;
+            st.textContent = OverlayButtonStyleToolset.getToolbarButtonCss();
+            d.head.appendChild(st);
+        },
+        _createController: function(hostEl, options) {
+            const inst = hostEl && hostEl.__tmkSwitchInstance;
+            if (!inst) return null;
+            return new ViewSwitchCtl(inst, options);
+        },
+        _ensureController: function(hostEl, options) {
+            if (hostEl.__tmkViewSwitchCtl) return hostEl.__tmkViewSwitchCtl;
+            const ctl = ViewSwitch._createController(hostEl, options);
+            hostEl.__tmkViewSwitchCtl = ctl;
+            return ctl;
+        },
+        mount: function(doc, options) {
+            options = options || {};
+            const d = doc || document;
+            const container = options.container;
+            const vsId = options.viewSwitchId || options.id || 'tmk-vsw';
+            if (!container || !d.body) return null;
+            ViewSwitch.injectStyles(d);
+            let host = d.getElementById(vsId);
+            if (!host) {
+                const initialMv =
+                    options.initialMyView !== undefined && options.initialMyView !== null ? !!options.initialMyView : true;
+                const cb = options.onMyViewChange;
+                const sw = new Switch({
+                    left: '我的视图',
+                    right: '原版',
+                    checked: initialMv,
+                    onToggled: function(mv) {
+                        if (typeof cb === 'function') cb(mv);
+                    }
+                });
+                host = sw.nativeElement;
+                host.id = vsId;
+                host.__tmkSwitchInstance = sw;
+                container.appendChild(host);
+                const ctl = ViewSwitch._ensureController(host, options);
+                if (options.zLayer !== false) {
+                    ViewSwitch.injectZRule(d, vsId, options.zLayer);
+                }
+                return ctl;
+            }
+            if (typeof Deck.adopt === 'function') {
+                try {
+                    Deck.adopt(d, vsId);
+                } catch (e) {}
+            }
+            const ctl = ViewSwitch._ensureController(host, options);
+            if (options.zLayer !== false) {
+                ViewSwitch.injectZRule(d, vsId, options.zLayer);
+            }
+            return ctl;
+        }
+    };
+    const TMK_UI_HIDDEN_CLASS = 'tmk-ui-hidden';
+    // 现代覆层与宿主混排：统一注入「带 tmk-ui-hidden 类则隐藏」的组合选择器，避免业务手写一长串 #id
+    const ChromeStack = {
+        injectHideWhenClassRule: function(doc, options) {
+            options = options || {};
+            const d = doc || document;
+            if (!d.head) return;
+            const styleId = options.styleId || 'tmk-chrome-ui-hidden-bundle';
+            if (d.getElementById(styleId)) return;
+            const ids = [];
+            const vk = options.viewSwitchScriptKey;
+            if (vk) {
+                const vid = ViewSwitch.domIdForScript(String(vk));
+                if (vid) ids.push(vid);
+            }
+            const extras = options.otherElementIds || options.extraElementIds || [];
+            if (extras && extras.length) {
+                for (let i = 0; i < extras.length; i += 1) {
+                    const eid = extras[i];
+                    if (eid != null && String(eid) !== '') ids.push(String(eid));
+                }
+            }
+            if (!ids.length) return;
+            let sel = '';
+            for (let j = 0; j < ids.length; j += 1) {
+                if (j > 0) sel += ',\n';
+                sel += '#' + ids[j] + '.' + TMK_UI_HIDDEN_CLASS;
+            }
+            const st = d.createElement('style');
+            st.id = styleId;
+            st.textContent = sel + ' {\n  display: none !important;\n}\n';
+            d.head.appendChild(st);
+        }
+    };
+    // 与宿主 input/textarea 的轻量绑定，供少收等页逐段迁出 get/set
+    const Field = {
+        text: function(hostInput) {
+            if (!hostInput) return null;
+            return {
+                pull: function() {
+                    return String(hostInput.value != null ? hostInput.value : '');
+                },
+                push: function(value) {
+                    hostInput.value = String(value != null ? value : '');
+                    hostInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    hostInput.dispatchEvent(new Event('change', { bubbles: true }));
+                },
+                el: hostInput
+            };
+        }
+    };
+    const GATE_PENDING_KEY = '__tmkGatePending';
+    const SESSION_LOST_QUERY_FLOW = 'tmk-flow-lost-query';
+    const SESSION_AHL_FLOW = 'tmk-flow-ahl';
+    const MODULE_LOST_QUERY = 'lostQuery';
+    const MODULE_AHL = 'ahl';
+    const ScriptGate = {
+        MODULE_LOST_QUERY: MODULE_LOST_QUERY,
+        MODULE_AHL: MODULE_AHL,
+        TTL_MS: 180000,
+        arm: function(moduleKey) {
+            if (!moduleKey) return;
+            try {
+                if (window.top) window.top[GATE_PENDING_KEY] = { module: String(moduleKey), ts: Date.now() };
+            } catch (e) {}
+        },
+        peekPending: function(moduleKey) {
+            try {
+                const p = window.top && window.top[GATE_PENDING_KEY];
+                if (!p || p.module !== moduleKey) return false;
+                if (Date.now() - Number(p.ts || 0) > ScriptGate.TTL_MS) return false;
+                return true;
+            } catch (e) {
+                return false;
+            }
+        },
+        consumePending: function(moduleKey) {
+            if (!ScriptGate.peekPending(moduleKey)) return false;
+            try {
+                if (window.top && window.top[GATE_PENDING_KEY]) delete window.top[GATE_PENDING_KEY];
+            } catch (e) {}
+            return true;
+        },
+        lostQueryFlowActive: function() {
+            try {
+                return sessionStorage.getItem(SESSION_LOST_QUERY_FLOW) === '1';
+            } catch (e) {
+                return false;
+            }
+        },
+        setLostQueryFlow: function() {
+            try {
+                sessionStorage.setItem(SESSION_LOST_QUERY_FLOW, '1');
+            } catch (e) {}
+        },
+        ahlFlowActive: function() {
+            try {
+                return sessionStorage.getItem(SESSION_AHL_FLOW) === '1';
+            } catch (e) {
+                return false;
+            }
+        },
+        setAhlFlow: function() {
+            try {
+                sessionStorage.setItem(SESSION_AHL_FLOW, '1');
+            } catch (e) {}
+        },
+        mayRunLostQueryMenu: function() {
+            return ScriptGate.peekPending(MODULE_LOST_QUERY);
+        },
+        mayRunLostQueryStep2: function() {
+            return ScriptGate.lostQueryFlowActive();
+        },
+        mayRunAhl: function() {
+            return ScriptGate.peekPending(MODULE_AHL) || ScriptGate.ahlFlowActive();
+        },
+        finishLostQueryMenuEnter: function() {
+            ScriptGate.consumePending(MODULE_LOST_QUERY);
+            ScriptGate.setLostQueryFlow();
+        },
+        finishAhlEnter: function() {
+            ScriptGate.consumePending(MODULE_AHL);
+            ScriptGate.setAhlFlow();
+        },
+        moduleKeyFromHref: function(href, linkText) {
+            const u = String(href || '');
+            if (/newBaggageLostSearch_menuAction/i.test(u)) return MODULE_LOST_QUERY;
+            if (/(?:newNull)?BaggageLost_newBaggageLostAction/i.test(u)) return MODULE_AHL;
+            const t = String(linkText || '').replace(/\s+/g, '');
+            if (/新建少收查询/.test(t)) return MODULE_LOST_QUERY;
+            return null;
+        }
+    };
     function buildToolset() {
         return {
             BASE_Z: BASE_Z,
+            DEFAULT_THEME: DEFAULT_THEME,
             DEFAULT_Z_LAYERS: DEFAULT_Z_LAYERS,
             zLayerCssVarFromKey: zLayerCssVarFromKey,
             resolveZLayers: resolveZLayers,
@@ -389,7 +889,15 @@
             ThemeVarToolset: ThemeVarToolset,
             StartMenuThemeController: StartMenuThemeController,
             OverlayButtonStyleToolset: OverlayButtonStyleToolset,
-            OverlayInputStyleToolset: OverlayInputStyleToolset
+            OverlayInputStyleToolset: OverlayInputStyleToolset,
+            ScriptGate: ScriptGate,
+            Deck: Deck,
+            Control: Control,
+            Button: Button,
+            Switch: Switch,
+            ViewSwitch: ViewSwitch,
+            ChromeStack: ChromeStack,
+            Field: Field
         };
     }
     function installToolsetGlobal() {

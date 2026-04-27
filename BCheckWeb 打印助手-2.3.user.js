@@ -181,7 +181,6 @@
 
     btn.onclick = () => {
         const data = extractData();
-        console.log("最终提取数据:", data);
         const win = window.open('', '_blank');
         win.document.write(generatePrintPage(data));
         win.document.close();

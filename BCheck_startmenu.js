@@ -742,8 +742,19 @@
         }
     }
 
-    // 封装磁贴点击后的固定跳转步骤：标记少收入口 → 关菜单 → 页面跳转
+    function armScriptGateFromNavigation(href, linkText) {
+        const toolset = resolveToolset();
+        if (!toolset || !toolset.ScriptGate || typeof toolset.ScriptGate.arm !== 'function') return;
+        const mk = typeof toolset.ScriptGate.moduleKeyFromHref === 'function'
+            ? toolset.ScriptGate.moduleKeyFromHref(String(href || ''), String(linkText || ''))
+            : null;
+        if (mk) toolset.ScriptGate.arm(mk);
+    }
+
+
+    // 封装磁贴点击后的固定跳转步骤：闸门 → 标记少收入口 → 关菜单 → 页面跳转
     function navigateLink(overlay, fab, linkText, href) {
+        armScriptGateFromNavigation(href, linkText);
         matchMyViews(linkText);
         closeStartMenu(overlay, fab);
         navigateToContent(href);

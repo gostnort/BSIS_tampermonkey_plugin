@@ -26,7 +26,6 @@
     const STEP2_STYLE_ID = 'tmk-step2-style';
     const WRAP_ID = 'tmk-lqv2-wrap';
     const SHELL_ID = 'tmk-step2-shell';
-    const TOOLBAR_ID = 'tmk-lqv2-toolbar';
     const GLASS_ID = 'tmk-lqv2-glass';
     const MODE_CLASS = 'tmk-step2-modern';
     const MODERN_LOST_QUERY_KEY = 'tmk-modern-lost-query-v2-launch';
@@ -59,7 +58,8 @@
         observer: null,
         observerRoot: null,
         syncTimer: null,
-        laxAutoDoneByBlock: null
+        laxAutoDoneByBlock: null,
+        viewSwitchCtl: null
     };
 
 
@@ -105,6 +105,16 @@
         if (topToolset && typeof topToolset === 'object') return topToolset;
         if (window[TOOLSET_GLOBAL_KEY] && typeof window[TOOLSET_GLOBAL_KEY] === 'object') return window[TOOLSET_GLOBAL_KEY];
         return null;
+    }
+
+
+    // ViewSwitch 控件在 toolset 中的脚本键（与 ViewSwitch.SCRIPT_DOM_ID 对齐）
+    const VIEW_SWITCH_SCRIPT_KEY = 'lostQueryV2';
+
+
+    function lostQueryViewSwitchDomId() {
+        const ts = resolveToolset();
+        return ts && ts.ViewSwitch && typeof ts.ViewSwitch.domIdForScript === 'function' ? ts.ViewSwitch.domIdForScript(VIEW_SWITCH_SCRIPT_KEY) : '';
     }
 
 
@@ -259,7 +269,6 @@
             html.${MODE_CLASS} .ui-content {
                 background: transparent !important;
             }
-            #${TOOLBAR_ID} { z-index: ${z.mainFunctionView}; }
             #${WRAP_ID} {
                 width: calc(100vw - var(--tmk-left-gap, 16px) - 24px);
                 max-width: calc(100vw - var(--tmk-left-gap, 16px) - 24px);
@@ -313,8 +322,6 @@
                 cursor: pointer;
                 box-shadow: var(--tmk-btn-shadow, 0 3px 10px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(0, 0, 0, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.06));
             }
-            /* 统一 toolbar 按钮样式 */
-            ${toolset && toolset.OverlayButtonStyleToolset ? toolset.OverlayButtonStyleToolset.getToolbarButtonCss() : ''}
         `;
         document.head.appendChild(style);
     }
@@ -557,24 +564,28 @@
 
     function ensureGlassLayer() {
         if (!document.body) return;
+        const ts = resolveToolset();
+        const DeckApi = ts && ts.Deck;
+        if (!DeckApi || typeof DeckApi.ensure !== 'function') return;
+        const root = DeckApi.ensure(document);
+        if (!root) return;
         let glass = document.getElementById(GLASS_ID);
         if (!glass) {
             glass = document.createElement('div');
             glass.id = GLASS_ID;
             glass.className = 'tmk-glass-backdrop';
             glass.style.zIndex = getScopedZLayers().backgroundCover;
-            document.body.appendChild(glass);
+            root.appendChild(glass);
+        } else if (typeof DeckApi.adopt === 'function') {
+            DeckApi.adopt(document, GLASS_ID);
         }
         state.glass = glass;
     }
 
-    function updateToolbar() {
-        const toolbar = document.getElementById(TOOLBAR_ID);
-        if (!toolbar) return;
-        toolbar.querySelectorAll('.tmk-toolbar-btn').forEach((btn) => {
-            const active = btn.getAttribute('data-mode') === state.mode;
-            btn.classList.toggle('tmk-active', active);
-        });
+    function syncViewSwitch() {
+        if (state.viewSwitchCtl) {
+            state.viewSwitchCtl.myView = state.mode === 'modern';
+        }
     }
 
     function applyMenuModeUI() {
@@ -615,26 +626,25 @@
             applyStep2ModeUI();
             if (state.shell) syncMirrorsFromDom(state.shell);
         }
-        updateToolbar();
+        syncViewSwitch();
     }
 
 
-    function renderToolbar() {
-        if (!document.body || document.getElementById(TOOLBAR_ID)) return;
-        const toolbar = document.createElement('div');
-        toolbar.id = TOOLBAR_ID;
-        toolbar.className = 'tmk-shared-toolbar';
-        toolbar.innerHTML = `
-            <button class="tmk-toolbar-btn tmk-active" data-mode="modern" type="button">我的视图</button>
-            <button class="tmk-toolbar-btn" data-mode="legacy" type="button">原版页面</button>
-        `;
-        document.body.appendChild(toolbar);
-        toolbar.addEventListener('click', (event) => {
-            const target = event.target;
-            if (!(target instanceof HTMLElement)) return;
-            const m = target.getAttribute('data-mode');
-            if (!m) return;
-            setMode(m);
+    function renderViewSwitch() {
+        if (!document.body) return;
+        const ts = resolveToolset();
+        const DeckApi = ts && ts.Deck;
+        const Vs = ts && ts.ViewSwitch;
+        if (!DeckApi || typeof DeckApi.ensure !== 'function') return;
+        if (!Vs || typeof Vs.mountForScript !== 'function') return;
+        const root = DeckApi.ensure(document);
+        if (!root) return;
+        state.viewSwitchCtl = Vs.mountForScript(document, VIEW_SWITCH_SCRIPT_KEY, {
+            container: root,
+            initialMyView: state.mode === 'modern',
+            onMyViewChange: function(isModern) {
+                setMode(isModern ? 'modern' : 'legacy');
+            }
         });
     }
 
@@ -718,6 +728,9 @@
 
     function buildModernUI() {
         if (!document.body || document.getElementById(WRAP_ID)) return;
+        const ts0 = resolveToolset();
+        const deckRoot = ts0 && ts0.Deck && typeof ts0.Deck.ensure === 'function' ? ts0.Deck.ensure(document) : null;
+        if (!deckRoot) return;
         const labels = getH4Labels();
         const withRequired = (info) => `${info.label}${info.required ? '：*' : '：'}`;
         const wrap = document.createElement('section');
@@ -742,7 +755,7 @@
             </div>
             <button id="tmk-lqv2-submit" class="tmk-submit" type="button">查询</button>
         `;
-        document.body.appendChild(wrap);
+        deckRoot.appendChild(wrap);
         state.wrap = wrap;
     }
 
@@ -850,20 +863,18 @@
 
 
     function bootstrapMenu() {
+        const ts = resolveToolset();
+        const Gate = ts && ts.ScriptGate;
+        if (!Gate || typeof Gate.mayRunLostQueryMenu !== 'function' || !Gate.mayRunLostQueryMenu()) return;
         if (!findLegacyControls()) return;
+        Gate.finishLostQueryMenuEnter();
         state.page = 'menu';
         ensureTheme2Applied();
-        console.info('[LQ unified] menu legacy controls found', {
-            receiveCompany: state.receiveCompanyInputs.length,
-            bagnum: state.bagnumInputs.length,
-            idnum: state.idnumInputs.length,
-            ticketNum: state.ticketNumInputs.length
-        });
         injectSharedLqv2Style();
         applyLeftGap();
         ensureGlassLayer();
         buildModernUI();
-        renderToolbar();
+        renderViewSwitch();
         syncFromLegacy();
         bindModernEvents();
         consumeModernLostQueryLaunchMark();
@@ -1401,7 +1412,7 @@
         injectSharedLqv2Style();
         injectStep2ShellStyle(getUiMetrics());
         ensureGlassLayer();
-        renderToolbar();
+        renderViewSwitch();
         const shell = document.createElement('div');
         shell.id = SHELL_ID;
         const h2 = document.createElement('h2');
@@ -1437,7 +1448,11 @@
         shell.appendChild(rows);
         shell.appendChild(summary);
         shell.appendChild(foot);
-        parent.insertBefore(shell, first);
+        const tsDeck = resolveToolset();
+        const DeckApi = tsDeck && tsDeck.Deck;
+        const deckRoot = DeckApi && typeof DeckApi.ensure === 'function' ? DeckApi.ensure(document) : null;
+        if (!deckRoot) return false;
+        deckRoot.appendChild(shell);
         for (let i = 0; i < blocks.length; i++) {
             blocks[i].classList.add('tmk-step2-lg-origin');
             blocks[i].setAttribute('data-tmk-idx', String(i));
@@ -1460,13 +1475,14 @@
         state.observerRoot = root;
         if (state.observer) state.observer.disconnect();
         state.observer = new MutationObserver(function(mutations) {
+            const lqVs = lostQueryViewSwitchDomId();
             let need = false;
             for (let i = 0; i < mutations.length; i++) {
                 let t = mutations[i].target;
                 if (t && t.nodeType === 3 && t.parentElement) t = t.parentElement;
                 if (!(t instanceof Element)) continue;
                 if (t.id === SHELL_ID || (t.closest && t.closest('#' + SHELL_ID))) continue;
-                if (t.id === TOOLBAR_ID || (t.closest && t.closest('#' + TOOLBAR_ID))) continue;
+                if (lqVs && (t.id === lqVs || (t.closest && t.closest('#' + lqVs)))) continue;
                 if (t.id === GLASS_ID || (t.closest && t.closest('#' + GLASS_ID))) continue;
                 need = true;
                 break;
@@ -1478,6 +1494,9 @@
 
 
     function bootstrapStep2() {
+        const ts = resolveToolset();
+        const Gate = ts && ts.ScriptGate;
+        if (!Gate || typeof Gate.mayRunLostQueryStep2 !== 'function' || !Gate.mayRunLostQueryStep2()) return;
         if (document.getElementById(SHELL_ID)) return;
         const tryMount = function() {
             if (document.getElementById(SHELL_ID)) return;
