@@ -1297,11 +1297,8 @@
     function injectStyles() {
         if (document.getElementById(STYLE_ID)) return;
         const toolset = resolveToolset();
-        if (toolset && toolset.OverlayButtonStyleToolset && typeof toolset.OverlayButtonStyleToolset.applyVars === 'function') {
-            toolset.OverlayButtonStyleToolset.applyVars(document);
-        }
-        if (toolset && toolset.OverlayInputStyleToolset && typeof toolset.OverlayInputStyleToolset.applyVars === 'function') {
-            toolset.OverlayInputStyleToolset.applyVars(document);
+        if (toolset && toolset.Field && typeof toolset.Field.ensureSharedStyles === 'function') {
+            toolset.Field.ensureSharedStyles(document);
         }
         const z = getSharedZLayers();
         const style = document.createElement('style');
@@ -1580,7 +1577,14 @@
             'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '.tmk-pnr-mirror-page--on button:not(.' + STEP2_GROUP_TITLE_CLASS + '),',
             'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '.tmk-pnr-mirror-page--on select,',
             'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '.tmk-pnr-mirror-page--on textarea {',
-            toolset && toolset.OverlayInputStyleToolset ? toolset.OverlayInputStyleToolset.getPropertiesBlock() : '  border: 1px solid var(--tmk-ctl-border-color, var(--tmk-c-search-input-border)) !important; border-radius: var(--tmk-ctl-radius, 8px) !important; background: var(--tmk-ctl-bg, var(--tmk-c-input-background)) !important; color: var(--tmk-ctl-fg, var(--tmk-c-major-font)) !important; box-sizing: border-box;',
+            '  border: 1px solid var(--tmk-c-search-input-border) !important;',
+            '  border-radius: 8px !important;',
+            '  background: var(--tmk-c-input-background) !important;',
+            '  color: var(--tmk-c-major-font) !important;',
+            '  min-height: 34px !important;',
+            '  padding: 6px 10px !important;',
+            '  box-sizing: border-box !important;',
+            '  font-family: inherit !important;',
             '}',
             'html.' + MODE_CLASS + ' #' + STAGE_ID + ' .' + MIRROR_PAGE_CLASS + '.tmk-pnr-mirror-page--on textarea {',
             '  min-height: 72px;',
@@ -2045,15 +2049,19 @@
     function mountDetailQuickFillFab() {
         let detailFab = document.getElementById(DETAIL_QUICK_FILL_FAB_ID);
         if (!detailFab) {
-            detailFab = document.createElement('button');
-            detailFab.id = DETAIL_QUICK_FILL_FAB_ID;
-            detailFab.type = 'button';
-            detailFab.className = 'tmk-pnr-qf-action';
-            detailFab.setAttribute('title', '完成');
-            detailFab.textContent = '新增AHL';
-            detailFab.addEventListener('click', function() {
-                runFabSubmit();
+            const tsD = resolveToolset();
+            const dFab = new tsD.Button({
+                useTmkBtn: false,
+                id: DETAIL_QUICK_FILL_FAB_ID,
+                type: 'button',
+                className: 'tmk-pnr-qf-action',
+                title: '完成',
+                textContent: '新增AHL',
+                onClick: function() {
+                    runFabSubmit();
+                }
             });
+            detailFab = dFab.nativeElement;
         }
         const stageForFab = document.getElementById(STAGE_ID);
         if (stageForFab && detailFab.parentNode !== stageForFab) stageForFab.appendChild(detailFab);
@@ -2111,31 +2119,39 @@
         state.shell = shell;
         mountStage();
         if (!document.getElementById(QUICK_FILL_FAB_ID)) {
-            const fab = document.createElement('button');
-            fab.id = QUICK_FILL_FAB_ID;
-            fab.type = 'button';
-            fab.className = 'tmk-pnr-qf-action';
-            fab.setAttribute('title', '颜色类型 CT 段数 = 行李牌 TN 数量；NW 总件数 = TN 数量。「预览」校验并写入后进入「详细」。');
-            fab.textContent = '新增';
-            fab.addEventListener('click', function() {
-                runFabSubmit();
+            const tsFab = resolveToolset();
+            const qFab = new tsFab.Button({
+                useTmkBtn: false,
+                id: QUICK_FILL_FAB_ID,
+                type: 'button',
+                className: 'tmk-pnr-qf-action',
+                title: '颜色类型 CT 段数 = 行李牌 TN 数量；NW 总件数 = TN 数量。「预览」校验并写入后进入「详细」。',
+                textContent: '新增',
+                onClick: function() {
+                    runFabSubmit();
+                }
             });
+            const fab = qFab.nativeElement;
             const actionBar = document.getElementById(ACTION_BAR_ID);
             if (actionBar) actionBar.appendChild(fab);
             else shell.appendChild(fab);
         }
         mountDetailQuickFillFab();
         if (!document.getElementById(PREVIEW_BTN_ID)) {
-            const prev = document.createElement('button');
-            prev.id = PREVIEW_BTN_ID;
-            prev.type = 'button';
-            prev.className = 'tmk-pnr-qf-action tmk-pnr-qf-preview-btn';
-            prev.setAttribute('title', '预览');
-            prev.setAttribute('aria-label', '预览');
-            prev.textContent = '预览';
-            prev.addEventListener('click', function() {
-                runPreviewPipeline();
+            const tsPr = resolveToolset();
+            const pBtn = new tsPr.Button({
+                useTmkBtn: false,
+                id: PREVIEW_BTN_ID,
+                type: 'button',
+                className: 'tmk-pnr-qf-action tmk-pnr-qf-preview-btn',
+                title: '预览',
+                ariaLabel: '预览',
+                textContent: '预览',
+                onClick: function() {
+                    runPreviewPipeline();
+                }
             });
+            const prev = pBtn.nativeElement;
             const slot = document.getElementById(PREVIEW_SLOT_ID);
             if (slot) slot.appendChild(prev);
             else shell.appendChild(prev);

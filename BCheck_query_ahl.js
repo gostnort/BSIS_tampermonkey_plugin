@@ -247,11 +247,8 @@
     function injectSharedLqv2Style() {
         if (!document.head || document.getElementById(STYLE_ID)) return;
         const toolset = resolveToolset();
-        if (toolset && toolset.OverlayButtonStyleToolset && typeof toolset.OverlayButtonStyleToolset.applyVars === 'function') {
-            toolset.OverlayButtonStyleToolset.applyVars(document);
-        }
-        if (toolset && toolset.OverlayInputStyleToolset && typeof toolset.OverlayInputStyleToolset.applyVars === 'function') {
-            toolset.OverlayInputStyleToolset.applyVars(document);
+        if (toolset && toolset.Field && typeof toolset.Field.ensureSharedStyles === 'function') {
+            toolset.Field.ensureSharedStyles(document);
         }
         const z = getScopedZLayers();
         const style = document.createElement('style');
@@ -307,23 +304,11 @@
                 font-size: 17px;
                 cursor: pointer;
             }
-            ${toolset && toolset.OverlayInputStyleToolset ? toolset.OverlayInputStyleToolset.getCss(['#' + WRAP_ID, '#' + SHELL_ID]) : ''}
-            #${WRAP_ID} .tmk-submit,
-            #${SHELL_ID} .tmk-submit {
-                margin-top: 22px;
-                width: 100%;
-                min-height: 46px;
-                border: 1px solid var(--tmk-btn-primary-border-color, var(--tmk-c-major-focus));
-                border-radius: var(--tmk-btn-primary-radius, 10px);
-                background: var(--tmk-btn-primary-bg, var(--tmk-c-major-focus));
-                color: var(--tmk-btn-primary-fg, var(--tmk-c-lv1-fg));
-                font-size: var(--tmk-btn-font-size, 20px);
-                font-weight: var(--tmk-btn-font-weight, 700);
-                cursor: pointer;
-                box-shadow: var(--tmk-btn-shadow, 0 3px 10px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(0, 0, 0, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.06));
-            }
         `;
         document.head.appendChild(style);
+        if (toolset && toolset.PrimarySubmitButton && typeof toolset.PrimarySubmitButton.ensureStyles === 'function') {
+            toolset.PrimarySubmitButton.ensureStyles(document);
+        }
     }
 
 
@@ -413,34 +398,34 @@
                 flex-wrap: wrap;
             }
             .tmk-step2-tile {
-                box-sizing: border-box;
-                border-radius: 8px;
-                display: flex;
-                flex-direction: column;
-                overflow: hidden;
-                transition: box-shadow 0.15s ease, transform 0.15s ease, outline 0.15s ease;
+                box-sizing: border-box !important;
+                border-radius: 8px !important;
+                display: flex !important;
+                flex-direction: column !important;
+                overflow: hidden !important;
+                transition: box-shadow 0.15s ease, transform 0.15s ease, outline 0.15s ease !important;
             }
-            .tmk-step2-tile:not(.tmk-step2-tile--pressed):not(:disabled) { transform: translateY(-4px); }
-            .tmk-step2-tile:not(.tmk-step2-tile--pressed):not(:disabled).tmk-step2-big-tile { box-shadow: var(--tmk-tile-shadow-big); }
-            .tmk-step2-tile.tmk-step2-tile--pressed { box-shadow: var(--tmk-tile-shadow-pressed); transform: translateY(0); }
+            .tmk-step2-tile:not(.tmk-step2-tile--pressed):not(:disabled) { transform: translateY(-4px) !important; }
+            .tmk-step2-tile:not(.tmk-step2-tile--pressed):not(:disabled).tmk-step2-big-tile { box-shadow: var(--tmk-tile-shadow-big) !important; }
+            .tmk-step2-tile.tmk-step2-tile--pressed { box-shadow: var(--tmk-tile-shadow-pressed) !important; transform: translateY(0) !important; }
             .tmk-step2-big-tile {
-                width: var(--tmk-step2-big-tile);
-                height: var(--tmk-step2-medium);
-                min-width: var(--tmk-step2-big-tile);
-                min-height: var(--tmk-step2-medium);
-                max-width: 100%;
-                border: 2px solid rgba(0,0,0,0.12);
-                justify-content: flex-start;
-                gap: 6px;
-                padding: 8px;
-                font-size: ${Math.max(10, Math.round(m.small * 0.22))}px;
-                line-height: 1.25;
+                width: var(--tmk-step2-big-tile) !important;
+                height: var(--tmk-step2-medium) !important;
+                min-width: var(--tmk-step2-big-tile) !important;
+                min-height: var(--tmk-step2-medium) !important;
+                max-width: 100% !important;
+                border: 2px solid rgba(0,0,0,0.12) !important;
+                justify-content: flex-start !important;
+                gap: 6px !important;
+                padding: 8px !important;
+                font-size: ${Math.max(10, Math.round(m.small * 0.22))}px !important;
+                line-height: 1.25 !important;
             }
-            .tmk-step2-big-tile.tmk-step2-tile--detail.tmk-step2-tile--pressed { outline: 2px solid #2563eb; outline-offset: 1px; }
-            .tmk-step2-tile--lax { background: rgba(40,167,69,0.18); border-color: rgba(25,135,84,0.55); }
-            .tmk-step2-tile--nolax { background: rgba(255,193,7,0.22); border-color: rgba(200,150,0,0.55); }
-            .tmk-step2-tile--gray { background: rgba(108,117,125,0.28); border-color: rgba(73,80,87,0.5); opacity: 0.9; }
-            .tmk-step2-tile--bs { box-shadow: 0 0 0 2px rgba(253,126,20,0.85) inset; }
+            .tmk-step2-big-tile.tmk-step2-tile--detail.tmk-step2-tile--pressed { outline: 2px solid #2563eb !important; outline-offset: 1px !important; }
+            .tmk-step2-tile--lax { background: rgba(40,167,69,0.18) !important; border-color: rgba(25,135,84,0.55) !important; }
+            .tmk-step2-tile--nolax { background: rgba(255,193,7,0.22) !important; border-color: rgba(200,150,0,0.55) !important; }
+            .tmk-step2-tile--gray { background: rgba(108,117,125,0.28) !important; border-color: rgba(73,80,87,0.5) !important; opacity: 0.9 !important; }
+            .tmk-step2-tile--bs { box-shadow: 0 0 0 2px rgba(253,126,20,0.85) inset !important; }
             .tmk-step2-flight-title {
                 font-weight: 700;
                 color: #0d1b2a;
@@ -467,19 +452,19 @@
                 min-width: 0;
             }
             .tmk-step2-med-tile {
-                width: var(--tmk-step2-medium);
-                height: var(--tmk-step2-medium);
-                min-width: var(--tmk-step2-medium);
-                min-height: var(--tmk-step2-medium);
-                border: 2px solid rgba(0,0,0,0.1);
-                justify-content: center;
-                align-items: center;
-                text-align: center;
-                padding: 6px;
-                font-size: ${Math.max(10, Math.round(m.small * 0.22))}px;
-                line-height: 1.2;
+                width: var(--tmk-step2-medium) !important;
+                height: var(--tmk-step2-medium) !important;
+                min-width: var(--tmk-step2-medium) !important;
+                min-height: var(--tmk-step2-medium) !important;
+                border: 2px solid rgba(0,0,0,0.1) !important;
+                justify-content: center !important;
+                align-items: center !important;
+                text-align: center !important;
+                padding: 6px !important;
+                font-size: ${Math.max(10, Math.round(m.small * 0.22))}px !important;
+                line-height: 1.2 !important;
             }
-            .tmk-step2-tile:not(.tmk-step2-tile--pressed):not(:disabled).tmk-step2-med-tile { box-shadow: var(--tmk-tile-shadow-med); transform: translateY(-2px); }
+            .tmk-step2-tile:not(.tmk-step2-tile--pressed):not(:disabled).tmk-step2-med-tile { box-shadow: var(--tmk-tile-shadow-med) !important; transform: translateY(-2px) !important; }
             #tmk-step2-selection-summary {
                 margin-top: ${m.gap}px;
                 padding: 4px 0;
@@ -753,9 +738,15 @@
                 </div>
                 <input id="tmk-lqv2-idvalue" type="text" autocomplete="off" />
             </div>
-            <button id="tmk-lqv2-submit" class="tmk-submit" type="button">查询</button>
         `;
         deckRoot.appendChild(wrap);
+        const tsBtn = resolveToolset();
+        const subInst = new tsBtn.PrimarySubmitButton({
+            id: 'tmk-lqv2-submit',
+            textContent: '查询',
+            type: 'button'
+        });
+        wrap.appendChild(subInst.nativeElement);
         state.wrap = wrap;
     }
 
@@ -1278,19 +1269,34 @@
 
 
     function createTileButton(type, opts) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'tmk-step2-tile tmk-step2-' + type + '-tile';
+        const tsT = resolveToolset();
         const modifier = getTileModifierClass(opts.delY, opts.rowLaxDest, opts.hasLaxSeg);
-        btn.classList.add('tmk-step2-tile' + modifier);
-        btn.disabled = !!opts.delY;
-        if (opts.isPressed !== undefined) {
-            btn.classList.toggle('tmk-step2-tile--pressed', !!opts.isPressed);
+        
+        const pieces = [
+            'tmk-step2-tile',
+            'tmk-step2-' + type + '-tile',
+            'tmk-step2-tile' + modifier,
+            opts.isPressed ? 'tmk-step2-tile--pressed' : '',
+            opts.isDetail ? 'tmk-step2-tile--detail' : ''
+        ];
+        
+        let inst;
+        if (type === 'big') {
+            inst = new tsT.BigTile({
+                extraClass: pieces.filter(Boolean).join(' '),
+                innerHTML: ''
+            });
+        } else {
+            inst = new tsT.MediumTile({
+                extraClass: pieces.filter(Boolean).join(' '),
+                innerHTML: ''
+            });
         }
-        if (opts.isDetail !== undefined) {
-            btn.classList.toggle('tmk-step2-tile--detail', !!opts.isDetail);
+        
+        if (opts.delY) {
+            inst.nativeElement.disabled = true;
         }
-        return btn;
+        return inst.nativeElement;
     }
 
 

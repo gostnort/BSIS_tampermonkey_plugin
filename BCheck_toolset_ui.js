@@ -2,7 +2,7 @@
 // @name         BCheckWeb UI Toolset
 // @namespace    http://tampermonkey.net/
 // @version      0.1.0
-// @description  公共工具集（含统一 Z-Index 层级）
+// @description  公共工具集（须在瓷砖菜单等脚本之前启用；勿用远程 @require，以免外网故障）
 // @author       Gostnort
 // @match        http://60.247.100.98/BCheckWeb/*
 // @match        https://60.247.100.98/BCheckWeb/*
@@ -34,6 +34,16 @@
         majorButton: '#dfe6ee',
         inputBackground: '#f8f9fa',
         minorButton: '#8cc7e8'
+    });
+    const DEFAULT_THEME_PACK = Object.freeze({
+        version: 2,
+        themes: [
+            {
+                id: 2,
+                name: '新建少收查询默认',
+                colors: Object.assign({}, DEFAULT_THEME)
+            }
+        ]
     });
     function zLayerCssVarFromKey(key) {
         return '--tmk-z-' + String(key).replace(/([A-Z])/g, '-$1').toLowerCase();
@@ -277,43 +287,393 @@
             return Object.assign({}, DEFAULT_THEME);
         }
     }
-    class OverlayButtonStyleToolset {
-        static getVars() {
-            return {
-                '--tmk-btn-primary-radius': '10px',
-                '--tmk-btn-primary-border-color': 'var(--tmk-c-major-focus)',
-                '--tmk-btn-primary-bg': 'var(--tmk-c-major-focus)',
-                '--tmk-btn-primary-fg': 'var(--tmk-c-lv1-fg)',
-                '--tmk-btn-secondary-border-color': 'var(--tmk-c-major-focus)',
-                '--tmk-btn-secondary-bg': 'var(--tmk-c-major-button)',
-                '--tmk-btn-secondary-fg': 'var(--tmk-c-major-font)',
-                '--tmk-btn-font-size': '20px',
-                '--tmk-btn-font-weight': '700',
-                '--tmk-btn-shadow': '0 3px 10px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(0, 0, 0, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.06)',
-                '--tmk-btn-hover-shadow': '0 4px 8px rgba(0, 0, 0, 0.5)',
-                '--tmk-toolbar-btn-padding': '0px 12px',
-                '--tmk-toolbar-btn-min-height': '30px',
-                '--tmk-toolbar-btn-radius': '999px',
-                '--tmk-toolbar-btn-font-size': '14px',
-                '--tmk-vsw-top': '20px',
-                '--tmk-vsw-right': '20px'
-            };
+    const DECK_STYLE_ID = 'tmk-deck-base-style';
+    const DECK_DOM_ID = 'tmk-deck';
+    const Deck = {
+        DOM_ID: DECK_DOM_ID,
+        injectBaseStyle: function(doc) {
+            const d = doc || document;
+            if (!d.head || d.getElementById(DECK_STYLE_ID)) return;
+            const st = d.createElement('style');
+            st.id = DECK_STYLE_ID;
+            st.textContent =
+                '#' + DECK_DOM_ID + ' { position: relative; z-index: 1; }\n';
+            d.head.appendChild(st);
+        },
+        // 现代覆层统一父节点：毛玻璃、工具栏、shell 等全部挂在此根下，避免散落在 body 第一层
+        ensure: function(doc) {
+            const d = doc || document;
+            Deck.injectBaseStyle(d);
+            if (!d.body) return null;
+            let root = d.getElementById(DECK_DOM_ID);
+            if (root) return root;
+            root = d.createElement('div');
+            root.id = DECK_DOM_ID;
+            root.className = 'tmk-deck';
+            root.setAttribute('data-tmk-role', 'modern-stack');
+            d.body.appendChild(root);
+            return root;
+        },
+        adopt: function(doc, elementId) {
+            const d = doc || document;
+            const el = d.getElementById(elementId);
+            const root = Deck.ensure(d);
+            if (!el || !root) return el;
+            if (el.parentNode !== root) root.appendChild(el);
+            return el;
         }
-        static getButtonBaseCss() {
-            return `
+    };
+
+
+    const StyleInjector = {
+        inject: function(doc, id, cssString) {
+            const d = doc || document;
+            if (!d.head || d.getElementById(id)) return;
+            const st = d.createElement('style');
+            st.id = id;
+            st.textContent = cssString;
+            d.head.appendChild(st);
+        }
+    };
+
+    class Control {
+        constructor(nativeElement) {
+            if (!nativeElement || !nativeElement.nodeType) {
+                throw new Error('Control 需要有效的挂载点 nativeElement');
+            }
+            this.nativeElement = nativeElement;
+        }
+
+        widget() {
+            return this.nativeElement;
+        }
+
+        get el() {
+            return this.nativeElement;
+        }
+
+        appendTo(parent) {
+            if (parent && parent.appendChild && this.nativeElement) parent.appendChild(this.nativeElement);
+            return this;
+        }
+
+        setStyle(styles) {
+            if (!styles || typeof styles !== 'object' || !this.nativeElement) return;
+            Object.assign(this.nativeElement.style, styles);
+        }
+
+        setVisible(visible) {
+            if (!this.nativeElement) return;
+            this.nativeElement.style.display = visible !== false ? '' : 'none';
+        }
+
+        setEnabled(enabled) {
+            const el = this.nativeElement;
+            if (!el) return;
+            const en = enabled !== false;
+            if (typeof el.disabled === 'boolean') {
+                el.disabled = !en;
+                el.style.opacity = '';
+                el.style.pointerEvents = '';
+            } else {
+                el.setAttribute('aria-disabled', en ? 'false' : 'true');
+                el.style.pointerEvents = en ? '' : 'none';
+                el.style.opacity = en ? '1' : '0.5';
+            }
+        }
+
+        setCssVar(name, value) {
+            if (!this.nativeElement || value === undefined || value === null) return;
+            let n = String(name || '').trim();
+            if (n.indexOf('--') !== 0) n = '--tmk-' + n.replace(/^\-+/, '');
+            this.nativeElement.style.setProperty(n, String(value));
+        }
+    }
+
+    const BUTTON_CHROME_STYLE_ID = 'tmk-btn-chrome-family';
+
+    class Button extends Control {
+        constructor(options) {
+            options = options || {};
+            const docRef = options.document || document;
+            let el = options.nativeElement;
+            if (!el) {
+                el = docRef.createElement('button');
+                el.type = options.type != null ? options.type : 'button';
+                const useBase = options.useTmkBtn !== false;
+                let cls = useBase ? 'tmk-btn' : '';
+                if (options.className) cls = cls ? cls + ' ' + options.className : options.className;
+                el.className = String(cls).trim();
+                if (options.id) el.id = options.id;
+                if (options.textContent != null) el.textContent = options.textContent;
+                if (options.innerHTML != null) el.innerHTML = options.innerHTML;
+                if (options.title) el.setAttribute('title', options.title);
+                if (options.ariaLabel) el.setAttribute('aria-label', options.ariaLabel);
+            } else if (options.className) {
+                el.className = (el.className ? el.className + ' ' : '') + options.className;
+            }
+            super(el);
+            if (typeof options.onClick === 'function') {
+                el.addEventListener('click', options.onClick);
+            }
+            // Self-inject base style
+            if (this.constructor.ensureStyles) {
+                this.constructor.ensureStyles(docRef);
+            }
+        }
+
+        static ensureStyles(doc) {
+            const tc = ThemeVarToolset.themeColorVarFromKey;
+            const css = `
                 .tmk-btn {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
                     margin: 0;
+                    padding: 6px 16px;
                     box-sizing: border-box;
-                    font-family: inherit;
+                    font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif;
+                    font-size: 14px;
+                    font-weight: 500;
+                    color: var(${tc('majorFont')}, #111111);
+                    background: var(${tc('searchBg')}, #dfe6ee);
+                    border: 1px solid var(${tc('searchInputBorder')}, #8fb1cc);
+                    border-radius: 6px;
                     cursor: pointer;
+                    transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+                    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
                 }
+                .tmk-btn:hover {
+                    background: var(${tc('searchActiveBg')}, #dfe6ee);
+                    border-color: var(${tc('majorFocus')}, #3f89d0);
+                }
+                .tmk-btn:active {
+                    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+                }
+                .tmk-btn[disabled], .tmk-btn[aria-disabled="true"] {
+                    opacity: 0.6;
+                    cursor: not-allowed;
+                    pointer-events: none;
+                }
+                .tmk-btn--block { display: block; width: 100%; box-sizing: border-box; }
+                .tmk-btn--transparent { background: transparent !important; border: none; box-shadow: none; }
             `;
+            StyleInjector.inject(doc, 'tmk-btn-base-style', css);
         }
-        static getViewSwitchCss() {
+
+        static injectChromeStyles(doc) {
+            // Obsolete: managed by specific classes
+        }
+    }
+
+    class PrimarySubmitButton extends Button {
+        constructor(options) {
+            options = options || {};
+            options.className = ('tmk-submit tmk-btn--block ' + (options.className || '')).trim();
+            super(options);
+        }
+
+        static ensureStyles(doc) {
+            Button.ensureStyles(doc);
+            const css = 
+                '.tmk-submit.tmk-btn, button.tmk-submit.tmk-btn {\n' +
+                '  margin-top: 22px; width: 100%; min-height: 46px;\n' +
+                '  border: 1px solid var(--tmk-btn-primary-border-color, var(--tmk-c-major-focus));\n' +
+                '  border-radius: var(--tmk-btn-primary-radius, 10px);\n' +
+                '  background: var(--tmk-btn-primary-bg, var(--tmk-c-major-focus));\n' +
+                '  color: var(--tmk-btn-primary-fg, var(--tmk-c-lv1-fg));\n' +
+                '  font-size: var(--tmk-btn-font-size, 20px); font-weight: var(--tmk-btn-font-weight, 700);\n' +
+                '  cursor: pointer;\n' +
+                '  box-shadow: var(--tmk-btn-shadow, 0 3px 10px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(0, 0, 0, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.06));\n' +
+                '}\n';
+            StyleInjector.inject(doc, 'tmk-btn-primary-submit', css);
+        }
+    }
+
+    class MenuButton extends Button {
+        constructor(options) {
+            options = options || {};
+            options.id = options.id || 'tmk-menu-button';
+            options.className = ('tmk-menu-btn ' + (options.className || '')).trim();
+            super(options);
+        }
+
+        static ensureStyles(doc) {
+            Button.ensureStyles(doc);
+            const zFl = zLayerCssVarFromKey('floatingButton');
+            const vfabBg = ThemeVarToolset.themeColorVarFromKey('fabBg');
+            const vfabFg = ThemeVarToolset.themeColorVarFromKey('fabFg');
+            const vfabBorder = ThemeVarToolset.themeColorVarFromKey('fabBorder');
+            const vfabHoverBd = ThemeVarToolset.themeColorVarFromKey('fabHoverBorder');
+            const css = 
+                '.tmk-menu-btn.tmk-btn {\n' +
+                '  position: fixed !important; left: 30px !important; top: 20px !important;\n' +
+                '  z-index: var(' + zFl + ') !important; width: 46px !important; height: 46px !important;\n' +
+                '  display: flex !important; align-items: center !important; justify-content: center !important;\n' +
+                '  background: var(' + vfabBg + ') !important; color: var(' + vfabFg + ') !important;\n' +
+                '  border: 1px solid var(' + vfabBorder + ') !important; border-radius: 999px !important;\n' +
+                '  font-family: "Segoe UI Light", sans-serif !important; font-size: 30px !important;\n' +
+                '  font-weight: 100 !important; cursor: pointer !important;\n' +
+                '  transition: border-color 0.2s ease !important;\n' +
+                '}\n' +
+                '.tmk-menu-btn.tmk-btn:hover {\n' +
+                '  background: var(' + vfabBg + ') !important; border-color: var(' + vfabHoverBd + ') !important;\n' +
+                '}\n';
+            StyleInjector.inject(doc, 'tmk-btn-menu-chrome', css);
+        }
+    }
+
+    class SearchButton extends Button {
+        constructor(options) {
+            options = options || {};
+            options.id = options.id || 'tmk-search-button';
+            options.className = ('tmk-search-btn ' + (options.className || '')).trim();
+            super(options);
+        }
+
+        static ensureStyles(doc) {
+            Button.ensureStyles(doc);
+            const zSc = zLayerCssVarFromKey('searchControls');
+            const vfabFg = ThemeVarToolset.themeColorVarFromKey('fabFg');
+            const vSearchBg = ThemeVarToolset.themeColorVarFromKey('searchBg');
+            const vSearchActBd = ThemeVarToolset.themeColorVarFromKey('searchActiveBorder');
+            const css = 
+                '.tmk-search-btn.tmk-btn {\n' +
+                '  position: fixed !important; right: 20px !important; top: 20px !important;\n' +
+                '  z-index: var(' + zSc + ') !important; width: 46px !important; height: 46px !important;\n' +
+                '  display: inline-flex !important; align-items: center !important; justify-content: center !important;\n' +
+                '  color: var(' + vfabFg + ') !important; font-size: 23px !important; line-height: 1 !important;\n' +
+                '  background: var(' + vSearchBg + ') !important;\n' +
+                '  border: 1px solid transparent !important; border-radius: 999px !important;\n' +
+                '  box-shadow: none !important; cursor: pointer !important;\n' +
+                '  transition: border-color 0.2s ease !important;\n' +
+                '}\n' +
+                '.tmk-search-btn.tmk-btn:hover,\n' +
+                '.tmk-search-btn.tmk-btn.tmk-search-active {\n' +
+                '  background: var(' + vSearchBg + ') !important;\n' +
+                '  border-color: var(' + vSearchActBd + ') !important;\n' +
+                '}\n';
+            StyleInjector.inject(doc, 'tmk-btn-search-chrome', css);
+        }
+    }
+
+    class Tile extends Button {
+        constructor(options) {
+            options = options || {};
+            const title = options.title != null ? String(options.title) : '';
+            const parts = ['tmk-tile'];
+            if (options.levelClass) parts.push(String(options.levelClass));
+            if (options.sizeClass) parts.push(String(options.sizeClass));
+            if (options.extraClass) parts.push(String(options.extraClass));
+            options.className = (parts.join(' ') + ' ' + (options.className || '')).trim();
+            const esc = function(s) {
+                const n = document.createElement('span');
+                n.textContent = s;
+                return n.innerHTML;
+            };
+            if (options.innerHTML === undefined) {
+                options.innerHTML = '<div class="tmk-title">' + esc(title) + '</div>';
+            }
+            super(options);
+            
+            if (this.constructor.ensureStyles) {
+                this.constructor.ensureStyles(options.document || document);
+            }
+        }
+
+        static ensureStyles(doc) {
+            const tc = ThemeVarToolset.themeColorVarFromKey;
+            const css = `
+                .tmk-tile {
+                    box-sizing: border-box !important;
+                    width: var(--tmk-medium) !important; height: var(--tmk-medium) !important;
+                    border: 0 !important; padding: 15px !important; text-align: left !important;
+                    cursor: pointer !important; transition: transform 0.15s ease, box-shadow 0.15s ease !important;
+                }
+                .tmk-tile--big {
+                    width: var(--tmk-big-tile) !important; height: var(--tmk-medium) !important;
+                }
+                .tmk-tile--small {
+                    width: var(--tmk-medium) !important; height: var(--tmk-small-tile-h) !important;
+                    padding: 6px 12px !important;
+                }
+                .tmk-tile--small .tmk-title { font-size: 12px !important; line-height: 1.15 !important; }
+                .tmk-tile:hover {
+                    transform: scale(1.03);
+                    filter: none !important;
+                    box-shadow: inset 0 0 0 2px var(${tc('tileHoverBorder')}) !important;
+                }
+                .tmk-title { font-size: 18px !important; line-height: 1.2 !important; }
+                .tmk-lv1 { background: var(${tc('lv1Bg')}) !important; color: var(${tc('lv1Fg')}) !important; }
+                .tmk-lv2 { background: var(${tc('lv2Bg')}) !important; color: var(${tc('lv2Fg')}) !important; }
+                .tmk-lv3 { background: var(${tc('lv3Bg')}) !important; color: var(${tc('lv3Fg')}) !important; }
+                .tmk-tile--kv-tool.tmk-lv3 { border: 2px solid var(${tc('kvToolBorder')}) !important; }
+                .tmk-tile--kv-tool.tmk-lv3 .tmk-title { color: var(${tc('kvToolFg')}) !important; }
+                .tmk-lv4 { background: var(${tc('lv4Bg')}) !important; color: var(${tc('lv4Fg')}) !important; }
+                .tmk-lv5 { background: var(${tc('lv5Bg')}) !important; color: var(${tc('lv5Fg')}) !important; }
+                .tmk-tile div:not(.tmk-title) { display: none !important; }
+            `;
+            StyleInjector.inject(doc, 'tmk-tile-base-style', css);
+        }
+    }
+
+    class MediumTile extends Tile {
+        constructor(options) {
+            super(options || {});
+        }
+    }
+
+    class BigTile extends Tile {
+        constructor(options) {
+            options = options || {};
+            options.sizeClass = 'tmk-tile--big';
+            super(options);
+        }
+    }
+
+    class SmallTile extends Tile {
+        constructor(options) {
+            options = options || {};
+            options.sizeClass = 'tmk-tile--small';
+            super(options);
+        }
+    }
+
+    class Switch extends Control {
+        constructor(options) {
+            options = options || {};
+            const el = document.createElement('div');
+            el.className = 'tmk-sw' + (options.className ? ' ' + String(options.className).trim() : '');
+            const esc = function(s) {
+                const n = document.createElement('span');
+                n.textContent = s;
+                return n.innerHTML;
+            };
+            const l = options.left != null ? '<span class="tmk-l">' + esc(String(options.left)) + '</span>' : '';
+            const r = options.right != null ? '<span class="tmk-r">' + esc(String(options.right)) + '</span>' : '';
+            el.innerHTML = l + '<div class="tmk-tr"><div class="tmk-th"></div></div>' + r;
+            el.setAttribute('role', 'group');
+            super(el);
+            this._checked = options.checked !== undefined ? !!options.checked : true;
+            this._onToggled = typeof options.onToggled === 'function' ? options.onToggled : null;
+            this._suppress = false;
+            const self = this;
+            el.addEventListener('click', function(ev) {
+                ev.preventDefault();
+                self.checked = !self._checked;
+            });
+            this._updateUi();
+            
+            if (this.constructor.ensureStyles) {
+                this.constructor.ensureStyles(options.document || document);
+            }
+        }
+
+        static ensureStyles(doc) {
             const vMajorFocus = ThemeVarToolset.themeColorVarFromKey('majorFocus');
             const vMinorButton = ThemeVarToolset.themeColorVarFromKey('minorButton');
             const vMajorFont = ThemeVarToolset.themeColorVarFromKey('majorFont');
-            return `
+            const css = `
                 .tmk-sw {
                     position: fixed;
                     right: var(--tmk-vsw-right, 20px);
@@ -385,233 +745,22 @@
                     transform: translateX(22px);
                 }
             `;
+            StyleInjector.inject(doc, 'tmk-sw-widget-css', css);
         }
-        static getToolbarButtonCss() {
-            return OverlayButtonStyleToolset.getButtonBaseCss() + OverlayButtonStyleToolset.getViewSwitchCss();
+
+        _updateUi() {
+            const el = this.nativeElement;
+            if (!el) return;
+            const mv = this._checked;
+            el.classList.toggle('tmk-modern', mv);
+            el.classList.toggle('tmk-legacy', !mv);
         }
-        static applyVars(doc) {
-            const d = doc || document;
-            if (!d || !d.documentElement) return;
-            const vars = OverlayButtonStyleToolset.getVars();
-            Object.keys(vars).forEach(function(k) {
-                d.documentElement.style.setProperty(k, vars[k]);
-            });
-        }
-    }
-    class OverlayInputStyleToolset {
-        static getVars() {
-            return {
-                '--tmk-ctl-border-color': 'var(--tmk-c-search-input-border)',
-                '--tmk-ctl-bg': 'var(--tmk-c-input-background)',
-                '--tmk-ctl-fg': 'var(--tmk-c-major-font)',
-                '--tmk-ctl-radius': '8px',
-                '--tmk-ctl-min-h': '34px',
-                '--tmk-ctl-pad-x': '10px',
-                '--tmk-ctl-pad-y': '6px'
-            };
-        }
-        // 生成指定 scope 选择器下的 input/select/textarea CSS 规则
-        // scopes: 字符串数组，每个元素是外层选择器前缀，如 ['#myWrap', '#myShell']
-        static getCss(scopes) {
-            const arr = Array.isArray(scopes) ? scopes : [scopes];
-            const tags = ['input', 'select', 'textarea'];
-            const parts = [];
-            for (let i = 0; i < arr.length; i += 1) {
-                const s = arr[i];
-                for (let j = 0; j < tags.length; j += 1) {
-                    parts.push(s + ' ' + tags[j]);
-                }
-            }
-            const selectors = parts.join(',\n            ');
-            return selectors + ' {\n' + OverlayInputStyleToolset.getPropertiesBlock() + '\n            }';
-        }
-        // 仅返回属性字符串（不含选择器），供特殊 selector 场景嵌入
-        static getPropertiesBlock() {
-            return (
-                '                border: 1px solid var(--tmk-ctl-border-color, var(--tmk-c-search-input-border)) !important;\n' +
-                '                border-radius: var(--tmk-ctl-radius, 8px) !important;\n' +
-                '                background: var(--tmk-ctl-bg, var(--tmk-c-input-background)) !important;\n' +
-                '                color: var(--tmk-ctl-fg, var(--tmk-c-major-font)) !important;\n' +
-                '                min-height: var(--tmk-ctl-min-h, 34px) !important;\n' +
-                '                padding: var(--tmk-ctl-pad-y, 6px) var(--tmk-ctl-pad-x, 10px) !important;\n' +
-                '                box-sizing: border-box !important;\n' +
-                '                font-family: inherit !important;'
-            );
-        }
-        static applyVars(doc) {
-            const d = doc || document;
-            if (!d || !d.documentElement) return;
-            const vars = OverlayInputStyleToolset.getVars();
-            Object.keys(vars).forEach(function(k) {
-                d.documentElement.style.setProperty(k, vars[k]);
-            });
-        }
-    }
-    const DECK_STYLE_ID = 'tmk-deck-base-style';
-    const DECK_DOM_ID = 'tmk-deck';
-    const Deck = {
-        DOM_ID: DECK_DOM_ID,
-        injectBaseStyle: function(doc) {
-            const d = doc || document;
-            if (!d.head || d.getElementById(DECK_STYLE_ID)) return;
-            const st = d.createElement('style');
-            st.id = DECK_STYLE_ID;
-            st.textContent =
-                '#' + DECK_DOM_ID + ' { position: relative; z-index: 1; }\n';
-            d.head.appendChild(st);
-        },
-        // 现代覆层统一父节点：毛玻璃、工具栏、shell 等全部挂在此根下，避免散落在 body 第一层
-        ensure: function(doc) {
-            const d = doc || document;
-            Deck.injectBaseStyle(d);
-            if (!d.body) return null;
-            let root = d.getElementById(DECK_DOM_ID);
-            if (root) return root;
-            root = d.createElement('div');
-            root.id = DECK_DOM_ID;
-            root.className = 'tmk-deck';
-            root.setAttribute('data-tmk-role', 'modern-stack');
-            d.body.appendChild(root);
-            return root;
-        },
-        adopt: function(doc, elementId) {
-            const d = doc || document;
-            const el = d.getElementById(elementId);
-            const root = Deck.ensure(d);
-            if (!el || !root) return el;
-            if (el.parentNode !== root) root.appendChild(el);
-            return el;
-        }
-    };
 
-
-    function Control(nativeElement) {
-        if (!nativeElement || !nativeElement.nodeType) {
-            throw new Error('Control 需要有效的挂载点 nativeElement');
-        }
-        this.nativeElement = nativeElement;
-    }
-
-
-    Control.prototype.widget = function() {
-        return this.nativeElement;
-    };
-
-
-    Object.defineProperty(Control.prototype, 'el', {
-        get: function() {
-            return this.nativeElement;
-        }
-    });
-
-
-    Control.prototype.appendTo = function(parent) {
-        if (parent && parent.appendChild && this.nativeElement) parent.appendChild(this.nativeElement);
-        return this;
-    };
-
-
-    Control.prototype.setStyle = function(styles) {
-        if (!styles || typeof styles !== 'object' || !this.nativeElement) return;
-        Object.assign(this.nativeElement.style, styles);
-    };
-
-
-    Control.prototype.setVisible = function(visible) {
-        if (!this.nativeElement) return;
-        this.nativeElement.style.display = visible !== false ? '' : 'none';
-    };
-
-
-    Control.prototype.setEnabled = function(enabled) {
-        const el = this.nativeElement;
-        if (!el) return;
-        const en = enabled !== false;
-        if (typeof el.disabled === 'boolean') {
-            el.disabled = !en;
-            el.style.opacity = '';
-            el.style.pointerEvents = '';
-        } else {
-            el.setAttribute('aria-disabled', en ? 'false' : 'true');
-            el.style.pointerEvents = en ? '' : 'none';
-            el.style.opacity = en ? '1' : '0.5';
-        }
-    };
-
-
-    Control.prototype.setCssVar = function(name, value) {
-        if (!this.nativeElement || value === undefined || value === null) return;
-        let n = String(name || '').trim();
-        if (n.indexOf('--') !== 0) n = '--tmk-' + n.replace(/^\-+/, '');
-        this.nativeElement.style.setProperty(n, String(value));
-    };
-
-
-    function Button(options) {
-        options = options || {};
-        let el = options.nativeElement;
-        if (!el) {
-            el = document.createElement('button');
-            el.type = options.type || 'button';
-            let cls = 'tmk-btn';
-            if (options.className) cls += ' ' + options.className;
-            el.className = cls.trim();
-            if (options.textContent != null) el.textContent = options.textContent;
-        } else if (options.className) {
-            el.className = (el.className ? el.className + ' ' : '') + options.className;
-        }
-        Control.call(this, el);
-    }
-
-
-    Button.prototype = Object.create(Control.prototype);
-    Button.prototype.constructor = Button;
-
-
-    function Switch(options) {
-        options = options || {};
-        const el = document.createElement('div');
-        el.className = 'tmk-sw' + (options.className ? ' ' + String(options.className).trim() : '');
-        const esc = function(s) {
-            const n = document.createElement('span');
-            n.textContent = s;
-            return n.innerHTML;
-        };
-        const l = options.left != null ? '<span class="tmk-l">' + esc(String(options.left)) + '</span>' : '';
-        const r = options.right != null ? '<span class="tmk-r">' + esc(String(options.right)) + '</span>' : '';
-        el.innerHTML = l + '<div class="tmk-tr"><div class="tmk-th"></div></div>' + r;
-        el.setAttribute('role', 'group');
-        Control.call(this, el);
-        this._checked = options.checked !== undefined ? !!options.checked : true;
-        this._onToggled = typeof options.onToggled === 'function' ? options.onToggled : null;
-        this._suppress = false;
-        const self = this;
-        el.addEventListener('click', function(ev) {
-            ev.preventDefault();
-            self.checked = !self._checked;
-        });
-        this._updateUi();
-    }
-
-
-    Switch.prototype = Object.create(Control.prototype);
-    Switch.prototype.constructor = Switch;
-
-
-    Switch.prototype._updateUi = function() {
-        const el = this.nativeElement;
-        if (!el) return;
-        const mv = this._checked;
-        el.classList.toggle('tmk-modern', mv);
-        el.classList.toggle('tmk-legacy', !mv);
-    };
-
-
-    Object.defineProperty(Switch.prototype, 'checked', {
-        get: function() {
+        get checked() {
             return this._checked;
-        },
-        set: function(val) {
+        }
+
+        set checked(val) {
             const next = !!val;
             if (this._checked === next) return;
             this._checked = next;
@@ -620,33 +769,31 @@
                 this._onToggled(next);
             }
         }
-    });
 
-
-    Switch.prototype.setCheckedQuiet = function(val) {
-        this._suppress = true;
-        this.checked = !!val;
-        this._suppress = false;
-    };
-
-
-    function ViewSwitchCtl(swInstance, options) {
-        this._sw = swInstance;
-        this.root = swInstance.nativeElement;
-        this._opts = options || {};
+        setCheckedQuiet(val) {
+            this._suppress = true;
+            this.checked = !!val;
+            this._suppress = false;
+        }
     }
 
+    class ViewSwitchCtl {
+        constructor(swInstance, options) {
+            this._sw = swInstance;
+            this.root = swInstance.nativeElement;
+            this._opts = options || {};
+        }
 
-    Object.defineProperty(ViewSwitchCtl.prototype, 'myView', {
-        get: function() {
+        get myView() {
             return this._sw.checked;
-        },
-        set: function(v) {
+        }
+
+        set myView(v) {
             const next = !!v;
             if (this._sw.checked === next) return;
             this._sw.setCheckedQuiet(next);
         }
-    });
+    }
 
 
     const VIEW_SWITCH_WIDGET_STYLE_ID = 'tmk-vsw-widget-css';
@@ -684,12 +831,7 @@
             st.textContent = css;
         },
         injectStyles: function(doc) {
-            const d = doc || document;
-            if (!d.head || d.getElementById(VIEW_SWITCH_WIDGET_STYLE_ID)) return;
-            const st = d.createElement('style');
-            st.id = VIEW_SWITCH_WIDGET_STYLE_ID;
-            st.textContent = OverlayButtonStyleToolset.getToolbarButtonCss();
-            d.head.appendChild(st);
+            // Obsolete: managed by specific classes
         },
         _createController: function(hostEl, options) {
             const inst = hostEl && hostEl.__tmkSwitchInstance;
@@ -780,6 +922,105 @@
     };
     // 与宿主 input/textarea 的轻量绑定，供少收等页逐段迁出 get/set
     const Field = {
+        ensureSharedStyles: function(doc) {
+            const css = `
+            /* --- Shared Form Fields --- */
+            .tmk-glass-backdrop {
+                position: fixed;
+                inset: 0;
+                display: none;
+                background: var(--tmk-c-overlay-backdrop);
+                backdrop-filter: blur(10px);
+                -webkit-backdrop-filter: blur(10px);
+                pointer-events: none;
+            }
+            .tmk-shared-toolbar {
+                position: fixed;
+                top: var(--tmk-toolbar-top, 10px);
+                right: var(--tmk-toolbar-right, 12px);
+                z-index: var(--tmk-z-main-function-view);
+                display: inline-flex;
+                align-items: center;
+                gap: var(--tmk-toolbar-gap, 6px);
+                padding: var(--tmk-toolbar-padding, 5px);
+                border-radius: var(--tmk-toolbar-radius, 999px);
+                background: var(--tmk-c-search-bg);
+                border: 1px solid var(--tmk-c-search-input-border);
+                box-shadow: var(--tmk-toolbar-shadow, 0 6px 16px rgba(23, 52, 86, 0.16));
+                backdrop-filter: blur(var(--tmk-toolbar-blur, 8px));
+                -webkit-backdrop-filter: blur(var(--tmk-toolbar-blur, 8px));
+            }
+            .tmk-shared-toolbar-btn {
+                min-height: var(--tmk-toolbar-btn-min-height, 30px);
+                padding: 0 var(--tmk-toolbar-btn-padding-x, 12px);
+                border-radius: var(--tmk-toolbar-btn-radius, 999px);
+                border: 1px solid var(--tmk-c-search-input-border);
+                background: var(--tmk-c-search-bg);
+                color: var(--tmk-c-major-font);
+                font-size: var(--tmk-toolbar-btn-font-size, 14px);
+                font-weight: 600;
+                cursor: pointer;
+                font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif;
+                transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+            }
+            .tmk-shared-toolbar-btn:hover {
+                border-color: var(--tmk-c-search-active-border, var(--tmk-c-search-input-border));
+            }
+            .tmk-shared-toolbar-btn.tmk-active {
+                background: var(--tmk-c-major-focus);
+                border-color: var(--tmk-c-major-focus);
+                color: var(--tmk-c-lv1-fg);
+            }
+            .tmk-pnr-field {
+                display: flex;
+                flex-direction: row;
+                align-items: center;
+                gap: 10px;
+                min-width: 0;
+                max-width: none;
+                width: 100%;
+                box-sizing: border-box;
+            }
+            .tmk-pnr-field .tmk-pnr-label {
+                margin-top: 0;
+            }
+            .tmk-pnr-label {
+                font-size: 18px;
+                font-weight: 600;
+                color: var(--tmk-c-major-font);
+                display: block;
+                flex: 0 0 auto;
+                max-width: none;
+                white-space: normal;
+                overflow: visible;
+                text-overflow: clip;
+                line-height: 1.3;
+            }
+            .tmk-pnr-field input, .tmk-pnr-field select, .tmk-pnr-field textarea {
+                flex: 1 1 auto;
+                min-width: 0;
+                min-height: 42px;
+                padding: 6px 2px;
+                border: 0;
+                border-bottom: 2px solid var(--tmk-c-search-input-border);
+                border-radius: 0;
+                background: transparent;
+                color: var(--tmk-c-major-font);
+                box-sizing: border-box;
+                font-size: 20px;
+                outline: none;
+            }
+            .tmk-pnr-field input::placeholder, .tmk-pnr-field textarea::placeholder {
+                color: color-mix(in srgb, var(--tmk-c-minor-focus) 50%, transparent) !important;
+            }
+            .tmk-pnr-field input:focus, .tmk-pnr-field select:focus, .tmk-pnr-field textarea:focus {
+                border-bottom-color: var(--tmk-c-major-focus);
+                outline: none;
+                box-shadow: none;
+            }
+            `;
+            StyleInjector.inject(doc, 'tmk-shared-form-fields', css);
+        },
         text: function(hostInput) {
             if (!hostInput) return null;
             return {
@@ -881,6 +1122,7 @@
         return {
             BASE_Z: BASE_Z,
             DEFAULT_THEME: DEFAULT_THEME,
+            DEFAULT_THEME_PACK: DEFAULT_THEME_PACK,
             DEFAULT_Z_LAYERS: DEFAULT_Z_LAYERS,
             zLayerCssVarFromKey: zLayerCssVarFromKey,
             resolveZLayers: resolveZLayers,
@@ -888,12 +1130,18 @@
             getSharedZLayers: getSharedZLayers,
             ThemeVarToolset: ThemeVarToolset,
             StartMenuThemeController: StartMenuThemeController,
-            OverlayButtonStyleToolset: OverlayButtonStyleToolset,
-            OverlayInputStyleToolset: OverlayInputStyleToolset,
+            StyleInjector: StyleInjector,
             ScriptGate: ScriptGate,
             Deck: Deck,
             Control: Control,
             Button: Button,
+            PrimarySubmitButton: PrimarySubmitButton,
+            MenuButton: MenuButton,
+            SearchButton: SearchButton,
+            Tile: Tile,
+            MediumTile: MediumTile,
+            BigTile: BigTile,
+            SmallTile: SmallTile,
             Switch: Switch,
             ViewSwitch: ViewSwitch,
             ChromeStack: ChromeStack,

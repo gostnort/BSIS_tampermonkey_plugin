@@ -32,9 +32,10 @@
     const inTopWindow = window.top === window.self;
     const inContentFrame = !inTopWindow && isUnderContentFrame();
     if (!inTopWindow && !inContentFrame) return;
+    if (!window.__tmkUiToolset) return;
 
-    const FAB_ID = 'tmk-fab';
-    const SEARCH_FAB_ID = 'tmk-search-fab';
+    const MENU_BUTTON_ID = 'tmk-menu-button';
+    const SEARCH_BUTTON_ID = 'tmk-search-button';
     const SEARCH_INPUT_ID = 'tmk-search-input';
     const PENDING_SEARCH_KEY = 'tmk-pending-search';
     const MODERN_LOST_QUERY_KEY = 'tmk-modern-lost-query-v2-launch';
@@ -54,32 +55,6 @@
 
     const state = { overlayOpen: false, showingSub: false, currentGroup: null, searchExpanded: false };
 
-    // 仅内置 id=2 新建少收查询默认；id=1 仅在点击“开始”后从远端加载
-    const DEFAULT_THEME_PACK = {
-        version: 2,
-        themes: [
-            {
-                id: 2,
-                name: '新建少收查询默认',
-                colors: {
-                    overlayBackdrop: '0.4',
-                    majorFocus: '#3f89d0',
-                    minorFocus: '#8fb1cc',
-                    minorFont: '#FFFFFF',
-                    majorFont: '#111111',
-                    majorButton: '#dfe6ee',
-                    inputBackground: '#f8f9fa',
-                    minorButton: '#8cc7e8'
-                }
-            }
-        ]
-    };
-
-
-    function themeColorVarFromKey(key) {
-        return '--tmk-c-' + String(key).replace(/([A-Z])/g, '-$1').toLowerCase();
-    }
-
 
     function resolveToolset() {
         const topToolset = (function() {
@@ -95,97 +70,28 @@
     }
 
 
-    function zLayerCssVarFromKey(key) {
-        const toolset = resolveToolset();
-        if (toolset && typeof toolset.zLayerCssVarFromKey === 'function') {
-            return toolset.zLayerCssVarFromKey(key);
-        }
-        return '--tmk-z-' + String(key).replace(/([A-Z])/g, '-$1').toLowerCase();
-    }
-
-
-    function publishZLayers(raw) {
-        const toolset = resolveToolset();
-        if (toolset && typeof toolset.publishZLayers === 'function') {
-            return toolset.publishZLayers(raw);
-        }
-        return raw && typeof raw === 'object' ? raw : {};
-    }
-
-
-    function getCurrentThemeId() {
-        const toolset = resolveToolset();
-        if (toolset && toolset.StartMenuThemeController && typeof toolset.StartMenuThemeController.getCurrentThemeId === 'function') {
-            return toolset.StartMenuThemeController.getCurrentThemeId();
-        }
-        try {
-            const t = window.__tmkTheme;
-            if (t && t.id !== undefined && t.id !== null) return t.id;
-        } catch (e) {}
-        return 2;
-    }
-
-
-    function applyThemeCss(doc, theme) {
-        const toolset = resolveToolset();
-        if (toolset && toolset.StartMenuThemeController && typeof toolset.StartMenuThemeController.applyThemeCss === 'function') {
-            toolset.StartMenuThemeController.applyThemeCss(doc, theme);
-            return;
-        }
-        if (!doc || !doc.head || !theme || !theme.colors) return;
-        let el = doc.getElementById('tmk-theme-vars');
-        if (!el) {
-            el = doc.createElement('style');
-            el.id = 'tmk-theme-vars';
-            doc.head.insertBefore(el, doc.head.firstChild);
-        }
-        const lines = [];
-        Object.keys(theme.colors).forEach((k) => {
-            const v = theme.colors[k];
-            if (v === undefined || v === null || String(v) === '') return;
-            lines.push('  ' + themeColorVarFromKey(k) + ': ' + v + ';');
-        });
-        el.textContent = ':root {\n' + lines.join('\n') + '\n}';
-        try {
-            window.__tmkTheme = { id: theme.id, name: theme.name, colors: theme.colors };
-            if (window.top) window.top.__tmkTheme = window.__tmkTheme;
-        } catch (e) {}
+    function themeControllerOptions() {
+        const ts = resolveToolset();
+        return {
+            themeStorageKey: THEME_STORAGE_KEY,
+            themeJsonUrl: THEME_JSON_URL,
+            defaultThemePack: ts.DEFAULT_THEME_PACK,
+            onThemeApplied: function() {
+                try {
+                    publishUiMetrics(calcUiMetrics());
+                } catch (e) {}
+            }
+        };
     }
 
 
     async function bootstrapTheme(doc) {
-        const toolset = resolveToolset();
-        if (toolset && toolset.StartMenuThemeController && typeof toolset.StartMenuThemeController.bootstrapTheme === 'function') {
-            await toolset.StartMenuThemeController.bootstrapTheme(doc, {
-                themeStorageKey: THEME_STORAGE_KEY,
-                themeJsonUrl: THEME_JSON_URL,
-                defaultThemePack: DEFAULT_THEME_PACK,
-                onThemeApplied: function() {
-                    try {
-                        publishUiMetrics(calcUiMetrics());
-                    } catch (e) {}
-                }
-            });
-            return;
-        }
+        await resolveToolset().StartMenuThemeController.bootstrapTheme(doc, themeControllerOptions());
     }
 
 
     async function cycleTheme(doc) {
-        const toolset = resolveToolset();
-        if (toolset && toolset.StartMenuThemeController && typeof toolset.StartMenuThemeController.cycleTheme === 'function') {
-            await toolset.StartMenuThemeController.cycleTheme(doc, {
-                themeStorageKey: THEME_STORAGE_KEY,
-                themeJsonUrl: THEME_JSON_URL,
-                defaultThemePack: DEFAULT_THEME_PACK,
-                onThemeApplied: function() {
-                    try {
-                        publishUiMetrics(calcUiMetrics());
-                    } catch (e) {}
-                }
-            });
-            return;
-        }
+        await resolveToolset().StartMenuThemeController.cycleTheme(doc, themeControllerOptions());
     }
 
     // --- 1. 链接提取：使用 a.href DOM属性（浏览器已按 frame 自身 baseURI 解析好的绝对URL）---
@@ -212,10 +118,6 @@
         } catch (e) { return '/BCheckWeb/execute_logout.action'; }
     }
 
-    // 定义处说明（供 renderTiles 等磁贴 onClick 调用链末尾引用）：
-    // 本脚本仅在 top 或 id=content_frame 的 iframe 内运行；此处赋值的是「当前脚本所在 window」的 location。
-    // 在 content_frame 场景下即整帧跳转到 url，效果等同用户直接在业务区打开该地址；url 通常来自 extractHref(menu_frame 里 a 标签) 的绝对路径。
-    // 典型顺序：先 matchMyViews / closeStartMenu，再调用本函数，避免菜单层仍打开或与友邻脚本状态不同步。
     function navigateToContent(url) {
         if (url) window.location.href = url;
     }
@@ -229,10 +131,6 @@
     }
 
 
-    // 定义处说明（供任意业务磁贴点击时调用；仅「新建少收」相关入口会落库）：
-    // 对 linkText 去空白后，若不匹配正则「新建少收查询|新建少收」则直接返回。
-    // 匹配时把 Date.now() 写入 sessionStorage 键 MODERN_LOST_QUERY_KEY（`tmk-modern-lost-query-v2-launch`，与 BCheckWeb 新建少收查询.js 内同名常量一致）。
-    // BCheckWeb 新建少收查询.js 的 consumeModernLostQueryLaunchMark 会在进入流程时读取并删除该键：时间戳须在 5 分钟内，用于判定本次是否从本 UI「我的视图」磁贴发起，从而启用/衔接现代表单壳层逻辑。
     function matchMyViews(linkText) {
         const text = String(linkText || '').replace(/\s+/g, '');
         if (!/新建少收查询|新建少收/.test(text)) return;
@@ -241,18 +139,44 @@
         } catch (e) {}
     }
 
-    // --- 2. 启动时默认折叠布局（保留 control_frame 可手动展开 menu_frame） ---
-    function applyDefaultFrameLayout() {
+    // --- 2. 启动时默认折叠布局（利用 control_frame 内置方法安全折叠 menu_frame） ---
+    function foldOrigMenu() {
+        let isFullyApplied = false;
         try {
             const topDoc = window.top && window.top.document ? window.top.document : document;
             const mainFs = topDoc.getElementById('main_frameset');
             const contentFs = topDoc.getElementById('content_frameset');
+            
+            // 1. 折叠系统自带的头部和底部
             if (mainFs) mainFs.rows = '0,*,0';
+            
+            // 2. 利用 control_frame 触发展开/折叠逻辑
             if (contentFs) {
-                contentFs.cols = '0,8,*';
-                contentFs.setAttribute('cols', '0,8,*');
+                try {
+                    const cfWindow = window.top.frames['control_frame'];
+                    if (cfWindow && typeof cfWindow.isHidden !== 'undefined') {
+                        // 如果尚未折叠，触发原生机制
+                        if (cfWindow.isHidden === false) {
+                            if (typeof cfWindow.switchSysBar === 'function') {
+                                cfWindow.switchSysBar();
+                            } else {
+                                const td = cfWindow.document.querySelector('.navPoint');
+                                if (td) td.click();
+                            }
+                        }
+                        isFullyApplied = true; // 状态处理完毕
+                    } else {
+                        isFullyApplied = false; // control_frame 未就绪，触发重试
+                    }
+                } catch(e) {
+                    // 跨域或完全意外时兜底硬编码修改
+                    contentFs.cols = '0,8,*';
+                    contentFs.setAttribute('cols', '0,8,*');
+                    isFullyApplied = true;
+                }
             }
         } catch (e) {}
+        return isFullyApplied;
     }
 
     // --- 3. 审美布局与 CSS (解决按钮掉到底部问题) ---
@@ -283,7 +207,7 @@
         const g = Number(metrics.gap) || 8;
         let themeId = 1;
         try {
-            themeId = getCurrentThemeId();
+            themeId = resolveToolset().StartMenuThemeController.getCurrentThemeId();
         } catch (e) {}
         const payload = {
             small: Number(metrics.small) || 46,
@@ -326,24 +250,18 @@
 
     function injectStyle(doc) {
         if (!doc || !doc.head) return;
-        const def = DEFAULT_THEME_PACK.themes[0];
-        const toolset = resolveToolset();
-        if (toolset && toolset.StartMenuThemeController) {
-            if (typeof toolset.StartMenuThemeController.saveThemeIndex === 'function') {
-                toolset.StartMenuThemeController.saveThemeIndex(THEME_STORAGE_KEY, 1);
-            }
-            if (typeof toolset.StartMenuThemeController.expandThemeColors === 'function') {
-                applyThemeCss(doc, {
-                    id: def.id,
-                    name: def.name,
-                    colors: toolset.StartMenuThemeController.expandThemeColors(def.colors, DEFAULT_THEME_PACK)
-                });
-            } else {
-                applyThemeCss(doc, { id: def.id, name: def.name, colors: def.colors });
-            }
-        }
+        const ts = resolveToolset();
+        const def = ts.DEFAULT_THEME_PACK.themes[0];
+        ts.StartMenuThemeController.saveThemeIndex(THEME_STORAGE_KEY, 1);
+        ts.StartMenuThemeController.applyThemeCss(doc, {
+            id: def.id,
+            name: def.name,
+            colors: ts.StartMenuThemeController.expandThemeColors(def.colors, ts.DEFAULT_THEME_PACK)
+        });
+        const tc = ts.ThemeVarToolset.themeColorVarFromKey;
+        const zv = ts.zLayerCssVarFromKey;
         const m = calcUiMetrics();
-        const z = publishZLayers();
+        const z = ts.publishZLayers();
         publishUiMetrics(m);
         publishAcceptStationCompany(readStoredAcceptStationCompany());
         let style = doc.getElementById('tmk-ui-style');
@@ -368,20 +286,20 @@
                 --tmk-toolbar-btn-padding-x: 12px;
                 --tmk-toolbar-btn-radius: 999px;
                 --tmk-toolbar-btn-font-size: 14px;
-                ${zLayerCssVarFromKey('basePage')}: ${z.basePage};
-                ${zLayerCssVarFromKey('backgroundCover')}: ${z.backgroundCover};
-                ${zLayerCssVarFromKey('mainFunctionView')}: ${z.mainFunctionView};
-                ${zLayerCssVarFromKey('functionButton')}: ${z.functionButton};
-                ${zLayerCssVarFromKey('searchControls')}: ${z.searchControls};
-                ${zLayerCssVarFromKey('floatingButton')}: ${z.floatingButton};
+                ${zv('basePage')}: ${z.basePage};
+                ${zv('backgroundCover')}: ${z.backgroundCover};
+                ${zv('mainFunctionView')}: ${z.mainFunctionView};
+                ${zv('functionButton')}: ${z.functionButton};
+                ${zv('searchControls')}: ${z.searchControls};
+                ${zv('floatingButton')}: ${z.floatingButton};
             }
             #${OVERLAY_ID} {
-                position: fixed!important; inset: 0!important; z-index: var(${zLayerCssVarFromKey('mainFunctionView')})!important;
-                display: none; background: var(${themeColorVarFromKey('overlayBackdrop')})!important; backdrop-filter: blur(10px);
+                position: fixed!important; inset: 0!important; z-index: var(${zv('mainFunctionView')})!important;
+                display: none; background: var(${tc('overlayBackdrop')})!important; backdrop-filter: blur(10px);
             }
             #tmk-panel-viewport {
                 position: relative !important;
-                z-index: var(${zLayerCssVarFromKey('mainFunctionView')}) !important;
+                z-index: var(${zv('mainFunctionView')}) !important;
                 display: flex !important;
                 flex-direction: row !important;
                 width: 200vw !important;
@@ -400,57 +318,32 @@
                 padding-right: 40px !important;
                 padding-left: clamp(80px, 12vw, 160px) !important;
                 position: relative !important;
-                z-index: var(${zLayerCssVarFromKey('mainFunctionView')}) !important;
-            }
-            #${FAB_ID} {
-                position: fixed !important; left: 30px !important; top: 20px !important;
-                z-index: var(${zLayerCssVarFromKey('floatingButton')}) !important; width: 46px !important; height: 46px !important;
-                display: flex !important; align-items: center !important; justify-content: center !important;
-                background: var(${themeColorVarFromKey('fabBg')}) !important; color: var(${themeColorVarFromKey('fabFg')}) !important;
-                border: 1px solid var(${themeColorVarFromKey('fabBorder')}) !important; border-radius: 999px !important;
-                font-family: "Segoe UI Light", sans-serif !important; font-size: 30px !important;
-                font-weight: 100 !important; cursor: pointer !important;
-                transition: border-color 0.2s ease !important;
-            }
-            #${FAB_ID}:hover { background: var(${themeColorVarFromKey('fabBg')}) !important; border-color: var(${themeColorVarFromKey('fabHoverBorder')}) !important; }
-            #${SEARCH_FAB_ID} {
-                position: fixed !important; right: 20px !important; top: 20px !important;
-                z-index: var(${zLayerCssVarFromKey('searchControls')}) !important; width: 46px !important; height: 46px !important;
-                display: inline-flex !important; align-items: center !important; justify-content: center !important;
-                color: var(${themeColorVarFromKey('fabFg')}) !important; font-size: 23px !important; line-height: 1 !important;
-                background: var(${themeColorVarFromKey('searchBg')}) !important;
-                border: 1px solid transparent !important; border-radius: 999px !important;
-                box-shadow: none !important; cursor: pointer !important; transition: border-color 0.2s ease !important;
-            }
-            #${SEARCH_FAB_ID}:hover,
-            #${SEARCH_FAB_ID}.tmk-search-active {
-                background: var(${themeColorVarFromKey('searchBg')}) !important;
-                border-color: var(${themeColorVarFromKey('searchActiveBorder')}) !important;
+                z-index: var(${zv('mainFunctionView')}) !important;
             }
             #${SEARCH_INPUT_ID} {
                 position: fixed !important; right: 72px !important; top: 26px !important;
-                z-index: var(${zLayerCssVarFromKey('searchControls')}) !important; width: 340px !important; height: 34px !important;
+                z-index: var(${zv('searchControls')}) !important; width: 340px !important; height: 34px !important;
                 box-sizing: border-box !important; border-radius: 6px !important;
-                border: 1px solid var(${themeColorVarFromKey('searchInputBorder')}) !important;
-                padding: 0 10px !important; background: var(${themeColorVarFromKey('searchInputBg')}) !important;
-                color: var(${themeColorVarFromKey('searchInputFg')}) !important; outline: none !important;
+                border: 1px solid var(${tc('searchInputBorder')}) !important;
+                padding: 0 10px !important; background: var(${tc('searchInputBg')}) !important;
+                color: var(${tc('searchInputFg')}) !important; outline: none !important;
             }
             #${SEARCH_INPUT_ID}.tmk-search-loading {
-                background: var(${themeColorVarFromKey('searchLoadingBg')}) !important;
-                color: var(${themeColorVarFromKey('searchLoadingFg')}) !important;
+                background: var(${tc('searchLoadingBg')}) !important;
+                color: var(${tc('searchLoadingFg')}) !important;
             }
             #${SEARCH_INPUT_ID}::placeholder {
-                color: var(${themeColorVarFromKey('searchPlaceholder')}) !important;
+                color: var(${tc('searchPlaceholder')}) !important;
             }
             .tmk-h1 {
-                font-size: ${m.h1Size}px !important; font-weight: 100 !important; color: var(${themeColorVarFromKey('h1')}) !important;
+                font-size: ${m.h1Size}px !important; font-weight: 100 !important; color: var(${tc('h1')}) !important;
                 margin: 0 0 10px 0 !important; letter-spacing: -1px !important;
             }
             .tmk-root-title-row {
                 display: flex !important; align-items: center !important; flex-wrap: wrap !important;
                 gap: 0.35em 0.55em !important; margin: 0 0 10px 0 !important;
                 position: relative !important;
-                z-index: var(${zLayerCssVarFromKey('functionButton')}) !important;
+                z-index: var(${zv('functionButton')}) !important;
             }
             .tmk-root-title-row .tmk-h1 { margin: 0 !important; }
             .tmk-root-title-row .tmk-start-btn,
@@ -471,12 +364,12 @@
                 cursor: pointer !important; text-align: left !important;
                 -webkit-appearance: none !important; appearance: none !important; box-shadow: none !important;
                 position: relative !important;
-                z-index: var(${zLayerCssVarFromKey('functionButton')}) !important;
+                z-index: var(${zv('functionButton')}) !important;
             }
             #${ACCEPT_STATION_INPUT_ID} {
                 flex: 0 1 auto !important; min-width: 3.5em !important; max-width: 18em !important;
                 font-family: inherit !important; font-weight: 100 !important;
-                color: var(${themeColorVarFromKey('h1')}) !important; letter-spacing: -1px !important;
+                color: var(${tc('h1')}) !important; letter-spacing: -1px !important;
                 margin: 0 !important; padding: 0 8px !important; border: none !important; background: transparent !important;
                 outline: none !important; box-shadow: none !important; -webkit-appearance: none !important;
                 appearance: none !important;
@@ -486,7 +379,7 @@
             .tmk-grid { display: grid !important; gap: var(--tmk-gap) !important; grid-template-columns: repeat(auto-fill, var(--tmk-medium)) !important; }
             #${ROOT_GRID_ID}, #${SUB_GRID_ID}, #${SYSTEM_GRID_ID}, #tmk-pinned-grid {
                 position: relative !important;
-                z-index: var(${zLayerCssVarFromKey('functionButton')}) !important;
+                z-index: var(${zv('functionButton')}) !important;
             }
 
             /* 常驻少收：两侧大磁贴 + 中间标准磁贴 */
@@ -503,156 +396,31 @@
                 justify-content: start !important;
             }
 
-            .tmk-tile {
-                box-sizing: border-box !important;
-                width: var(--tmk-medium) !important; height: var(--tmk-medium) !important;
-                border: 0 !important; padding: 15px !important; text-align: left !important;
-                cursor: pointer !important; transition: transform 0.15s ease, box-shadow 0.15s ease !important;
-            }
-            .tmk-tile--big {
-                width: var(--tmk-big-tile) !important; height: var(--tmk-medium) !important;
-            }
-            .tmk-tile--small {
-                width: var(--tmk-medium) !important; height: var(--tmk-small-tile-h) !important;
-                padding: 6px 12px !important;
-            }
-            .tmk-tile--small .tmk-title { font-size: 12px !important; line-height: 1.15 !important; }
-            .tmk-tile:hover {
-                transform: scale(1.03);
-                filter: none !important;
-                box-shadow: inset 0 0 0 2px var(${themeColorVarFromKey('tileHoverBorder')}) !important;
-            }
-            .tmk-title { font-size: 18px !important; line-height: 1.2 !important; }
-            .tmk-lv1 { background: var(${themeColorVarFromKey('lv1Bg')}) !important; color: var(${themeColorVarFromKey('lv1Fg')}) !important; }
-            .tmk-lv2 { background: var(${themeColorVarFromKey('lv2Bg')}) !important; color: var(${themeColorVarFromKey('lv2Fg')}) !important; }
-            .tmk-lv3 { background: var(${themeColorVarFromKey('lv3Bg')}) !important; color: var(${themeColorVarFromKey('lv3Fg')}) !important; }
-            .tmk-tile--kv-tool.tmk-lv3 { border: 2px solid var(${themeColorVarFromKey('kvToolBorder')}) !important; }
-            .tmk-tile--kv-tool.tmk-lv3 .tmk-title { color: var(${themeColorVarFromKey('kvToolFg')}) !important; }
-            .tmk-lv4 { background: var(${themeColorVarFromKey('lv4Bg')}) !important; color: var(${themeColorVarFromKey('lv4Fg')}) !important; }
-            .tmk-lv5 { background: var(${themeColorVarFromKey('lv5Bg')}) !important; color: var(${themeColorVarFromKey('lv5Fg')}) !important; }
-            .tmk-tile div:not(.tmk-title) { display: none !important; }
 
-            /* --- Shared Form Fields --- */
-            .tmk-glass-backdrop {
-                position: fixed;
-                inset: 0;
-                display: none;
-                background: var(${themeColorVarFromKey('overlayBackdrop')});
-                backdrop-filter: blur(10px);
-                -webkit-backdrop-filter: blur(10px);
-                pointer-events: none;
-            }
-            .tmk-shared-toolbar {
-                position: fixed;
-                top: var(--tmk-toolbar-top, 10px);
-                right: var(--tmk-toolbar-right, 12px);
-                z-index: var(${zLayerCssVarFromKey('mainFunctionView')});
-                display: inline-flex;
-                align-items: center;
-                gap: var(--tmk-toolbar-gap, 6px);
-                padding: var(--tmk-toolbar-padding, 5px);
-                border-radius: var(--tmk-toolbar-radius, 999px);
-                background: var(${themeColorVarFromKey('searchBg')});
-                border: 1px solid var(${themeColorVarFromKey('searchInputBorder')});
-                box-shadow: var(--tmk-toolbar-shadow, 0 6px 16px rgba(23, 52, 86, 0.16));
-                backdrop-filter: blur(var(--tmk-toolbar-blur, 8px));
-                -webkit-backdrop-filter: blur(var(--tmk-toolbar-blur, 8px));
-            }
-            .tmk-shared-toolbar-btn {
-                min-height: var(--tmk-toolbar-btn-min-height, 30px);
-                padding: 0 var(--tmk-toolbar-btn-padding-x, 12px);
-                border-radius: var(--tmk-toolbar-btn-radius, 999px);
-                border: 1px solid var(${themeColorVarFromKey('searchInputBorder')});
-                background: var(${themeColorVarFromKey('searchBg')});
-                color: var(${themeColorVarFromKey('majorFont')});
-                font-size: var(--tmk-toolbar-btn-font-size, 14px);
-                font-weight: 600;
-                cursor: pointer;
-                font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif;
-                transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-            }
-            .tmk-shared-toolbar-btn:hover {
-                border-color: var(${themeColorVarFromKey('searchActiveBorder')}, var(${themeColorVarFromKey('searchInputBorder')}));
-            }
-            .tmk-shared-toolbar-btn.tmk-active {
-                background: var(${themeColorVarFromKey('majorFocus')});
-                border-color: var(${themeColorVarFromKey('majorFocus')});
-                color: var(${themeColorVarFromKey('lv1Fg')});
-            }
-            .tmk-pnr-field {
-                display: flex;
-                flex-direction: row;
-                align-items: center;
-                gap: 10px;
-                min-width: 0;
-                max-width: none;
-                width: 100%;
-                box-sizing: border-box;
-            }
-            .tmk-pnr-field .tmk-pnr-label {
-                margin-top: 0;
-            }
-            .tmk-pnr-label {
-                font-size: 18px;
-                font-weight: 600;
-                color: var(--tmk-c-major-font);
-                display: block;
-                flex: 0 0 auto;
-                max-width: none;
-                white-space: normal;
-                overflow: visible;
-                text-overflow: clip;
-                line-height: 1.3;
-            }
-            .tmk-pnr-field input, .tmk-pnr-field select, .tmk-pnr-field textarea {
-                flex: 1 1 auto;
-                min-width: 0;
-                min-height: 42px;
-                padding: 6px 2px;
-                border: 0;
-                border-bottom: 2px solid var(--tmk-c-search-input-border);
-                border-radius: 0;
-                background: transparent;
-                color: var(--tmk-c-major-font);
-                box-sizing: border-box;
-                font-size: 20px;
-                outline: none;
-            }
-            .tmk-pnr-field input::placeholder, .tmk-pnr-field textarea::placeholder {
-                color: color-mix(in srgb, var(--tmk-c-minor-focus) 50%, transparent) !important;
-            }
-            .tmk-pnr-field input:focus, .tmk-pnr-field select:focus, .tmk-pnr-field textarea:focus {
-                border-bottom-color: var(--tmk-c-major-focus);
-                outline: none;
-                box-shadow: none;
-            }
         `;
     }
 
     // --- 4. 标题联动逻辑 ---
-    function showRootPage(overlay, fab) {
+    function showRootPage(overlay, menuBtn) {
         const vp = overlay.querySelector('#tmk-panel-viewport');
         if (vp) vp.style.transform = 'translateX(0)';
-        // 首页标题重置为“开始”（隐藏按钮，用于切换主题）
         const h1 = overlay.querySelector('#tmk-root-page .tmk-start-btn') || overlay.querySelector('#tmk-root-page .tmk-h1');
         if (h1) h1.textContent = '开始';
         state.showingSub = false;
-        fab.textContent = '✕';
-        fab.style.backgroundImage = '';
-        fab.style.backgroundSize = '';
-        fab.style.backgroundRepeat = '';
-        fab.style.backgroundPosition = '';
+        menuBtn.textContent = '✕';
+        menuBtn.style.backgroundImage = '';
+        menuBtn.style.backgroundSize = '';
+        menuBtn.style.backgroundRepeat = '';
+        menuBtn.style.backgroundPosition = '';
     }
 
-    function showSubPage(overlay, fab, titleText) {
+    function showSubPage(overlay, menuBtn, titleText) {
         const vp = overlay.querySelector('#tmk-panel-viewport');
         if (vp) vp.style.transform = 'translateX(-100vw)';
-        // 二级页标题变为选中的磁贴名
         const subH1 = overlay.querySelector('#tmk-sub-page .tmk-h1');
         if (subH1) subH1.textContent = titleText || '业务';
         state.showingSub = true;
-        // 用 img 而非 background-image：#tmk-fab 的 background: … !important 会压掉内联背景图；128px 源图用 CSS 缩放到 30px 即可
-        fab.innerHTML = `<img src="${return_icon}" alt="" draggable="false" style="width:30px;height:30px;display:block;object-fit:contain;">`;
+        menuBtn.innerHTML = `<img src="${return_icon}" alt="" draggable="false" style="width:30px;height:30px;display:block;object-fit:contain;">`;
     }
 
     // --- 5. 磁贴等级色（lv1 核心高频 … lv5 系统边缘）---
@@ -690,7 +458,7 @@
 
 
     // --- 6. 菜单渲染与绑定 ---
-    function renderTiles(doc, overlay, fab) {
+    function renderTiles(doc, overlay, menuBtn) {
         const rootGrid = doc.getElementById(ROOT_GRID_ID);
         const pinnedGrid = doc.getElementById('tmk-pinned-grid');
         const systemGrid = doc.getElementById(SYSTEM_GRID_ID);
@@ -719,7 +487,7 @@
             if (row.length >= 3) pinnedGrid.classList.add('tmk-pinned-grid--wide');
             row.forEach(l => {
                 pinnedGrid.appendChild(buildTile(doc, l.text, 'tmk-lv1', () => {
-                    navigateLink(overlay, fab, l.text, l.href);
+                    navigateLink(overlay, menuBtn, l.text, l.href);
                 }, tileSizePinnedClass(l.text), tileLv3OutlineClass(l.text)));
             });
         }
@@ -728,7 +496,7 @@
         groups.forEach(g => {
             if (lostG && g.title === lostG.title) return;
             if (sysG && g.title === sysG.title) return;
-            rootGrid.appendChild(buildSubGroupTile(doc, overlay, fab, g, ''));
+            rootGrid.appendChild(buildSubGroupTile(doc, overlay, menuBtn, g, ''));
         });
 
         // 第三行：退出系统 + 系统维护（小磁贴）
@@ -737,7 +505,7 @@
                 window.top.location.href = getLogoutUrl();
             }, 'tmk-tile--small'));
             if (sysG) {
-                systemGrid.appendChild(buildSubGroupTile(doc, overlay, fab, sysG, 'tmk-tile--small'));
+                systemGrid.appendChild(buildSubGroupTile(doc, overlay, menuBtn, sysG, 'tmk-tile--small'));
             }
         }
     }
@@ -753,49 +521,50 @@
 
 
     // 封装磁贴点击后的固定跳转步骤：闸门 → 标记少收入口 → 关菜单 → 页面跳转
-    function navigateLink(overlay, fab, linkText, href) {
+    function navigateLink(overlay, menuBtn, linkText, href) {
         armScriptGateFromNavigation(href, linkText);
         matchMyViews(linkText);
-        closeStartMenu(overlay, fab);
+        closeStartMenu(overlay, menuBtn);
         navigateToContent(href);
     }
 
 
-    // 封装「分组大磁贴」：点击后清空子 grid、填充该组子链接磁贴、切换到 sub-page
-    function buildSubGroupTile(doc, overlay, fab, group, sizeCls) {
+    function buildSubGroupTile(doc, overlay, menuBtn, group, sizeCls) {
         return buildTile(doc, group.title, tileLevelClass(group.title, group.title), () => {
             const subGrid = doc.getElementById(SUB_GRID_ID);
             subGrid.innerHTML = '';
             group.links.forEach(l => {
                 subGrid.appendChild(buildTile(doc, l.text, tileLevelClass(l.text, group.title), () => {
-                    navigateLink(overlay, fab, l.text, l.href);
+                    navigateLink(overlay, menuBtn, l.text, l.href);
                 }, '', tileLv3OutlineClass(l.text)));
             });
-            showSubPage(overlay, fab, group.title);
+            showSubPage(overlay, menuBtn, group.title);
         }, sizeCls || '', tileLv3OutlineClass(group.title));
     }
 
 
     function buildTile(doc, title, cls, onClick, sizeCls, extraCls) {
-        const btn = doc.createElement('button');
-        btn.className = ['tmk-tile', cls, sizeCls || '', extraCls || ''].filter(Boolean).join(' ');
-        btn.innerHTML = `<div class="tmk-title">${title}</div>`;
-        btn.onclick = onClick;
-        return btn;
+        const tsb = resolveToolset();
+        let Ctor = tsb.MediumTile;
+        if (sizeCls && /tmk-tile--big/.test(sizeCls)) Ctor = tsb.BigTile;
+        if (sizeCls && /tmk-tile--small/.test(sizeCls)) Ctor = tsb.SmallTile;
+        const inst = new Ctor({
+            document: doc,
+            title: title,
+            levelClass: cls,
+            extraClass: extraCls || '',
+            onClick: onClick
+        });
+        return inst.nativeElement;
     }
 
-    // 定义处说明（供磁贴 onClick 在跳转前调用；参数为本帧注入的开始菜单 DOM）：
-    // overlay：瓷砖开始菜单全屏层，置 display:none 并配合 state.overlayOpen=false，表示菜单已关闭。
-    // fab：左下浮动打开钮，文案恢复为「☰」（与 showRootPage/showSubPage 里使用的 «✕»/«‹» 状态相对）。
-    // 接着 setUiOverlayState(false) 同步 window.top 与本帧的 __tmkUiOverlayOpen（与 setUiOverlayState(true) 成对，供 BCheckWeb 新建少收查询.js 的 shouldCloseForUiOverlay 等读取）。
-    // setSearchShortcutVisible(false) 收起搜索捷径相关 UI，避免菜单关掉后捷径仍占位。
-    function closeStartMenu(overlay, fab) {
+    function closeStartMenu(overlay, menuBtn) {
         overlay.style.display = 'none'; state.overlayOpen = false;
-        fab.textContent = '☰';
-        fab.style.backgroundImage = '';
-        fab.style.backgroundSize = '';
-        fab.style.backgroundRepeat = '';
-        fab.style.backgroundPosition = '';
+        menuBtn.textContent = '☰';
+        menuBtn.style.backgroundImage = '';
+        menuBtn.style.backgroundSize = '';
+        menuBtn.style.backgroundRepeat = '';
+        menuBtn.style.backgroundPosition = '';
         setUiOverlayState(false);
         setSearchShortcutVisible(false);
     }
@@ -821,9 +590,9 @@
         return { input: inputs[0], button: buttons[0] };
     }
 
-    function collapseSearch(searchFab, searchInput) {
+    function collapseSearch(searchBtn, searchInput) {
         state.searchExpanded = false;
-        if (searchFab) searchFab.classList.remove('tmk-search-active');
+        if (searchBtn) searchBtn.classList.remove('tmk-search-active');
         if (searchInput) {
             searchInput.disabled = false;
             searchInput.classList.remove('tmk-search-loading');
@@ -834,9 +603,9 @@
         }
     }
 
-    function setSearchLoading(searchFab, searchInput, loading) {
+    function setSearchLoading(searchBtn, searchInput, loading) {
         if (!searchInput) return;
-        if (searchFab && loading) searchFab.classList.add('tmk-search-active');
+        if (searchBtn && loading) searchBtn.classList.add('tmk-search-active');
         if (loading) {
             searchInput.disabled = true;
             searchInput.classList.add('tmk-search-loading');
@@ -850,11 +619,11 @@
     }
 
     function setSearchShortcutVisible(visible) {
-        const searchFab = document.getElementById(SEARCH_FAB_ID);
+        const searchBtn = document.getElementById(SEARCH_BUTTON_ID);
         const searchInput = document.getElementById(SEARCH_INPUT_ID);
-        if (!searchFab) return;
-        searchFab.style.setProperty('display', visible ? 'inline-flex' : 'none', 'important');
-        if (!visible && searchInput) collapseSearch(searchFab, searchInput);
+        if (!searchBtn) return;
+        searchBtn.style.setProperty('display', visible ? 'inline-flex' : 'none', 'important');
+        if (!visible && searchInput) collapseSearch(searchBtn, searchInput);
     }
 
     function findVisibleExactTextNode(doc, targetText) {
@@ -903,10 +672,6 @@
 
     function activateTrackingTab(doc) {
         return activateTabByText(doc, '行李追踪数据');
-    }
-
-    function activatePageTab(doc, targetText) {
-        return activateTabByText(doc, targetText);
     }
 
     function savePendingSearch(value) {
@@ -978,7 +743,7 @@
         return isTabActiveByText(document, '行李追踪数据') || !!findBrsTargets(document);
     }
 
-    function submitSearchWithRetry(value, searchFab, searchInput, retries) {
+    function submitSearchWithRetry(value, searchBtn, searchInput, retries) {
         const targets = findBrsTargets(document);
         if (targets) {
             // 同步赋值并触发输入事件，兼容页面监听逻辑
@@ -986,19 +751,19 @@
             targets.input.dispatchEvent(new Event('input', { bubbles: true }));
             targets.input.dispatchEvent(new Event('change', { bubbles: true }));
             targets.button.click();
-            if (searchFab && searchInput) collapseSearch(searchFab, searchInput);
+            if (searchBtn && searchInput) collapseSearch(searchBtn, searchInput);
             // 查询触发后自动收起开始页，减少手动关闭操作
             const overlay = document.getElementById(OVERLAY_ID);
-            const fab = document.getElementById(FAB_ID);
-            if (overlay && fab && state.overlayOpen) closeStartMenu(overlay, fab);
+            const menuBtn = document.getElementById(MENU_BUTTON_ID);
+            if (overlay && menuBtn && state.overlayOpen) closeStartMenu(overlay, menuBtn);
             return;
         }
         if (retries <= 0) {
             alert('未找到“查询BRS记录”输入框或按钮。');
-            if (searchFab && searchInput) collapseSearch(searchFab, searchInput);
+            if (searchBtn && searchInput) collapseSearch(searchBtn, searchInput);
             return;
         }
-        setTimeout(() => submitSearchWithRetry(value, searchFab, searchInput, retries - 1), 260);
+        setTimeout(() => submitSearchWithRetry(value, searchBtn, searchInput, retries - 1), 260);
     }
 
     async function continuePendingSearchIfNeeded() {
@@ -1020,14 +785,14 @@
         submitSearchWithRetry(value, null, null, 2);
     }
 
-    async function submitSearch(searchFab, searchInput) {
+    async function submitSearch(searchBtn, searchInput) {
         const value = (searchInput.value || '').trim();
         if (!value) {
-            collapseSearch(searchFab, searchInput);
+            collapseSearch(searchBtn, searchInput);
             return;
         }
-        setSearchLoading(searchFab, searchInput, true);
-        const submitDirect = () => submitSearchWithRetry(value, searchFab, searchInput, 2);
+        setSearchLoading(searchBtn, searchInput, true);
+        const submitDirect = () => submitSearchWithRetry(value, searchBtn, searchInput, 2);
         // 第一步：优先在当前页面激活“行李追踪数据”标签
         if (isTabActiveByText(document, '行李追踪数据')) {
             submitDirect();
@@ -1040,10 +805,10 @@
         }
 
         // 第二步：当前页失败则切到“新建少收”，等待页面稳定后再激活目标标签
-        const pageSwitched = activatePageTab(document, '新建少收');
+        const pageSwitched = activateTabByText(document, '新建少收');
         if (!pageSwitched) {
             alert('未找到“新建少收”页面或“行李追踪数据”标签页。');
-            collapseSearch(searchFab, searchInput);
+            collapseSearch(searchBtn, searchInput);
             return;
         }
         // 页面切换通常触发导航，当前执行链会中断：先缓存查询值，等待新页面加载后自动续跑
@@ -1051,66 +816,61 @@
     }
 
     function bindSearchShortcut(doc) {
-        if (!doc || !doc.body || doc.getElementById(SEARCH_FAB_ID)) return;
-
-        const searchFab = doc.createElement('button');
-        searchFab.id = SEARCH_FAB_ID;
-        searchFab.type = 'button';
-        searchFab.title = '查询BRS记录';
-        searchFab.innerHTML = `<img src="${search_icon}" alt="搜索" style="width:20px;height:20px;display:block;">`;
-        searchFab.style.display = 'none';
-
+        if (!doc || !doc.body || doc.getElementById(SEARCH_BUTTON_ID)) return;
+        const tsS = resolveToolset();
         const searchInput = doc.createElement('input');
         searchInput.id = SEARCH_INPUT_ID;
         searchInput.type = 'search';
         searchInput.placeholder = '输入行李号，支持 / 分隔';
         searchInput.style.display = 'none';
-
-        doc.body.appendChild(searchInput);
-        doc.body.appendChild(searchFab);
-
-        searchFab.onclick = () => {
-            if (!state.searchExpanded) {
-                state.searchExpanded = true;
-                searchFab.classList.add('tmk-search-active');
-                searchInput.style.display = 'block';
-                searchInput.focus();
-                searchInput.select();
-                return;
+        const searchInst = new tsS.SearchButton({
+            document: doc,
+            title: '查询BRS记录',
+            innerHTML: '<img src="' + search_icon + '" alt="搜索" style="width:20px;height:20px;display:block;">',
+            onClick: function(evt) {
+                const el = evt.currentTarget;
+                if (!state.searchExpanded) {
+                    state.searchExpanded = true;
+                    el.classList.add('tmk-search-active');
+                    searchInput.style.display = 'block';
+                    searchInput.focus();
+                    searchInput.select();
+                    return;
+                }
+                submitSearch(el, searchInput);
             }
-            submitSearch(searchFab, searchInput);
-        };
-
+        });
+        const searchBtn = searchInst.nativeElement;
+        searchBtn.style.display = 'none';
+        doc.body.appendChild(searchInput);
+        doc.body.appendChild(searchBtn);
         searchInput.addEventListener('keydown', (evt) => {
             if (evt.key === 'Enter') {
                 evt.preventDefault();
-                submitSearch(searchFab, searchInput);
+                submitSearch(searchBtn, searchInput);
             }
             if (evt.key === 'Escape') {
                 evt.preventDefault();
-                collapseSearch(searchFab, searchInput);
+                collapseSearch(searchBtn, searchInput);
             }
         });
     }
 
-    function ensureSearchShortcut(doc) {
-        if (!doc || !doc.body) return;
-        bindSearchShortcut(doc);
-    }
-
     // --- 启动流程 ---
     if (inContentFrame) {
-        // 只在启动阶段做几次默认布局，之后交还给 control_frame 按钮控制
-        applyDefaultFrameLayout();
-        setTimeout(applyDefaultFrameLayout, 300);
-        setTimeout(applyDefaultFrameLayout, 1200);
+        // 尝试执行一次折叠，如果由于加载延迟尚未就绪，则利用 waitUntil 轮询重试
+        if (!foldOrigMenu()) {
+            waitUntil(() => foldOrigMenu(), 2000, 100);
+        }
         const timer = setInterval(() => {
             if (document.body) {
                 injectStyle(document);
-                ensureSearchShortcut(document);
+                bindSearchShortcut(document);
                 setSearchShortcutVisible(false);
-                const fab = document.createElement('button'); fab.id = FAB_ID; fab.textContent = '☰';
-                document.body.appendChild(fab);
+                const tsM = resolveToolset();
+                const menuInst = new tsM.MenuButton({ document: document, textContent: '☰' });
+                const menuBtn = menuInst.nativeElement;
+                document.body.appendChild(menuBtn);
                 const overlay = document.createElement('div'); overlay.id = OVERLAY_ID;
                 overlay.innerHTML = `
                     <div id="tmk-panel-viewport">
@@ -1149,22 +909,19 @@
                     });
                 }
 
-                // 页面局部刷新或脚本重绘时，自动补建搜索按钮，避免依赖菜单按钮交互后才出现
-                setInterval(() => {
-                    ensureSearchShortcut(document);
-                }, 1500);
+                // 检查是否需要继续执行之前因跨页跳转而缓存的搜索动作
                 continuePendingSearchIfNeeded();
 
-                fab.onclick = () => {
+                menuBtn.onclick = () => {
                     if (!state.overlayOpen) {
-                        overlay.style.display = 'block'; renderTiles(document, overlay, fab);
-                        state.overlayOpen = true; showRootPage(overlay, fab);
+                        overlay.style.display = 'block'; renderTiles(document, overlay, menuBtn);
+                        state.overlayOpen = true; showRootPage(overlay, menuBtn);
                         setUiOverlayState(true);
                         setSearchShortcutVisible(true);
                     } else if (state.showingSub) {
-                        showRootPage(overlay, fab);
+                        showRootPage(overlay, menuBtn);
                     } else {
-                        closeStartMenu(overlay, fab);
+                        closeStartMenu(overlay, menuBtn);
                     }
                 };
                 clearInterval(timer);
