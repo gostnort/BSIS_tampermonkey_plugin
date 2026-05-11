@@ -109,7 +109,7 @@
                 majorFont: 'lv3Fg',
                 minorFont: 'lv1Fg',
                 minorFocus: 'searchInputBorder',
-                majorButton: 'fabBg',
+                majorButton: 'menuButtonBg',
                 inputBackground: 'searchInputBg',
                 minorButton: 'lv4Bg'
             };
@@ -161,7 +161,7 @@
                 lv1Bg: StartMenuThemeController.pickColor(c, ['lv1Bg'], majorFocus),
                 kvToolFg: StartMenuThemeController.pickColor(c, ['kvToolFg'], majorFocus),
                 lv2Bg: StartMenuThemeController.pickColor(c, ['lv2Bg'], minorFocus),
-                fabHoverBorder: StartMenuThemeController.pickColor(c, ['fabHoverBorder'], minorFocus),
+                menuButtonHoverBorder: StartMenuThemeController.pickColor(c, ['menuButtonHoverBorder'], minorFocus),
                 searchInputBorder: StartMenuThemeController.pickColor(c, ['searchInputBorder'], minorFocus),
                 kvToolBorder: StartMenuThemeController.pickColor(c, ['kvToolBorder'], minorFocus),
                 tileHoverBorder: StartMenuThemeController.pickColor(c, ['tileHoverBorder'], minorFocus),
@@ -170,17 +170,18 @@
                 lv2Fg: StartMenuThemeController.pickColor(c, ['lv2Fg'], minorFont),
                 lv4Fg: StartMenuThemeController.pickColor(c, ['lv4Fg'], majorFont),
                 lv3Fg: StartMenuThemeController.pickColor(c, ['lv3Fg'], majorFont),
-                fabFg: StartMenuThemeController.pickColor(c, ['fabFg'], majorFont),
+                menuButtonFg: StartMenuThemeController.pickColor(c, ['menuButtonFg'], majorFont),
+                searchButtonFg: StartMenuThemeController.pickColor(c, ['searchButtonFg'], majorFont),
                 searchInputFg: StartMenuThemeController.pickColor(c, ['searchInputFg'], majorFont),
                 lv5Fg: StartMenuThemeController.pickColor(c, ['lv5Fg'], majorFont),
                 searchPlaceholder: StartMenuThemeController.pickColor(c, ['searchPlaceholder'], majorFont),
-                fabBg: StartMenuThemeController.pickColor(c, ['fabBg'], majorButton),
+                menuButtonBg: StartMenuThemeController.pickColor(c, ['menuButtonBg'], majorButton),
                 searchBg: StartMenuThemeController.pickColor(c, ['searchBg'], majorButton),
                 lv5Bg: StartMenuThemeController.pickColor(c, ['lv5Bg'], majorButton),
                 searchActiveBg: StartMenuThemeController.pickColor(c, ['searchActiveBg'], majorButton),
                 lv4Bg: StartMenuThemeController.pickColor(c, ['lv4Bg'], minorButton),
                 searchInputBg: StartMenuThemeController.pickColor(c, ['searchInputBg'], inputBg),
-                fabBorder: StartMenuThemeController.pickColor(c, ['fabBorder'], minorFocus),
+                menuButtonBorder: StartMenuThemeController.pickColor(c, ['menuButtonBorder'], minorFocus),
                 searchBorder: StartMenuThemeController.pickColor(c, ['searchBorder'], minorFocus),
                 searchActiveBorder: minorFocus,
                 lv3Bg: StartMenuThemeController.pickColor(c, ['lv3Bg'], majorButton),
@@ -390,8 +391,17 @@
         }
     }
 
-    const BUTTON_CHROME_STYLE_ID = 'tmk-btn-chrome-family';
-
+    function mergeClassNames() {
+        const merged = [];
+        for (let i = 0; i < arguments.length; i += 1) {
+            const part = arguments[i];
+            if (part === undefined || part === null) continue;
+            const value = String(part).trim();
+            if (!value) continue;
+            merged.push(value);
+        }
+        return merged.join(' ');
+    }
     class Button extends Control {
         constructor(options) {
             options = options || {};
@@ -401,25 +411,20 @@
                 el = docRef.createElement('button');
                 el.type = options.type != null ? options.type : 'button';
                 const useBase = options.useTmkBtn !== false;
-                let cls = useBase ? 'tmk-btn' : '';
-                if (options.className) cls = cls ? cls + ' ' + options.className : options.className;
-                el.className = String(cls).trim();
+                el.className = mergeClassNames(useBase ? 'tmk-btn' : '', options.className);
                 if (options.id) el.id = options.id;
                 if (options.textContent != null) el.textContent = options.textContent;
                 if (options.innerHTML != null) el.innerHTML = options.innerHTML;
                 if (options.title) el.setAttribute('title', options.title);
                 if (options.ariaLabel) el.setAttribute('aria-label', options.ariaLabel);
             } else if (options.className) {
-                el.className = (el.className ? el.className + ' ' : '') + options.className;
+                el.className = mergeClassNames(el.className, options.className);
             }
             super(el);
             if (typeof options.onClick === 'function') {
                 el.addEventListener('click', options.onClick);
             }
-            // Self-inject base style
-            if (this.constructor.ensureStyles) {
-                this.constructor.ensureStyles(docRef);
-            }
+            Button.ensureStyles(docRef);
         }
 
         static ensureStyles(doc) {
@@ -461,9 +466,6 @@
             StyleInjector.inject(doc, 'tmk-btn-base-style', css);
         }
 
-        static injectChromeStyles(doc) {
-            // Obsolete: managed by specific classes
-        }
     }
 
     class PrimarySubmitButton extends Button {
@@ -471,6 +473,7 @@
             options = options || {};
             options.className = ('tmk-submit tmk-btn--block ' + (options.className || '')).trim();
             super(options);
+            PrimarySubmitButton.ensureStyles(options.document || document);
         }
 
         static ensureStyles(doc) {
@@ -496,30 +499,31 @@
             options.id = options.id || 'tmk-menu-button';
             options.className = ('tmk-menu-btn ' + (options.className || '')).trim();
             super(options);
+            MenuButton.ensureStyles(options.document || document);
         }
 
         static ensureStyles(doc) {
             Button.ensureStyles(doc);
             const zFl = zLayerCssVarFromKey('floatingButton');
-            const vfabBg = ThemeVarToolset.themeColorVarFromKey('fabBg');
-            const vfabFg = ThemeVarToolset.themeColorVarFromKey('fabFg');
-            const vfabBorder = ThemeVarToolset.themeColorVarFromKey('fabBorder');
-            const vfabHoverBd = ThemeVarToolset.themeColorVarFromKey('fabHoverBorder');
+            const vMenuButtonBg = ThemeVarToolset.themeColorVarFromKey('menuButtonBg');
+            const vMenuButtonFg = ThemeVarToolset.themeColorVarFromKey('menuButtonFg');
+            const vMenuButtonBorder = ThemeVarToolset.themeColorVarFromKey('menuButtonBorder');
+            const vMenuButtonHoverBorder = ThemeVarToolset.themeColorVarFromKey('menuButtonHoverBorder');
             const css = 
                 '.tmk-menu-btn.tmk-btn {\n' +
                 '  position: fixed !important; left: 30px !important; top: 20px !important;\n' +
                 '  z-index: var(' + zFl + ') !important; width: 46px !important; height: 46px !important;\n' +
                 '  display: flex !important; align-items: center !important; justify-content: center !important;\n' +
-                '  background: var(' + vfabBg + ') !important; color: var(' + vfabFg + ') !important;\n' +
-                '  border: 1px solid var(' + vfabBorder + ') !important; border-radius: 999px !important;\n' +
+                '  background: var(' + vMenuButtonBg + ') !important; color: var(' + vMenuButtonFg + ') !important;\n' +
+                '  border: 1px solid var(' + vMenuButtonBorder + ') !important; border-radius: 999px !important;\n' +
                 '  font-family: "Segoe UI Light", sans-serif !important; font-size: 30px !important;\n' +
                 '  font-weight: 100 !important; cursor: pointer !important;\n' +
                 '  transition: border-color 0.2s ease !important;\n' +
                 '}\n' +
                 '.tmk-menu-btn.tmk-btn:hover {\n' +
-                '  background: var(' + vfabBg + ') !important; border-color: var(' + vfabHoverBd + ') !important;\n' +
+                '  background: var(' + vMenuButtonBg + ') !important; border-color: var(' + vMenuButtonHoverBorder + ') !important;\n' +
                 '}\n';
-            StyleInjector.inject(doc, 'tmk-btn-menu-chrome', css);
+            StyleInjector.inject(doc, 'tmk-btn-menu-style', css);
         }
     }
 
@@ -529,12 +533,13 @@
             options.id = options.id || 'tmk-search-button';
             options.className = ('tmk-search-btn ' + (options.className || '')).trim();
             super(options);
+            SearchButton.ensureStyles(options.document || document);
         }
 
         static ensureStyles(doc) {
             Button.ensureStyles(doc);
             const zSc = zLayerCssVarFromKey('searchControls');
-            const vfabFg = ThemeVarToolset.themeColorVarFromKey('fabFg');
+            const vSearchButtonFg = ThemeVarToolset.themeColorVarFromKey('searchButtonFg');
             const vSearchBg = ThemeVarToolset.themeColorVarFromKey('searchBg');
             const vSearchActBd = ThemeVarToolset.themeColorVarFromKey('searchActiveBorder');
             const css = 
@@ -542,7 +547,7 @@
                 '  position: fixed !important; right: 20px !important; top: 20px !important;\n' +
                 '  z-index: var(' + zSc + ') !important; width: 46px !important; height: 46px !important;\n' +
                 '  display: inline-flex !important; align-items: center !important; justify-content: center !important;\n' +
-                '  color: var(' + vfabFg + ') !important; font-size: 23px !important; line-height: 1 !important;\n' +
+                '  color: var(' + vSearchButtonFg + ') !important; font-size: 23px !important; line-height: 1 !important;\n' +
                 '  background: var(' + vSearchBg + ') !important;\n' +
                 '  border: 1px solid transparent !important; border-radius: 999px !important;\n' +
                 '  box-shadow: none !important; cursor: pointer !important;\n' +
@@ -553,7 +558,7 @@
                 '  background: var(' + vSearchBg + ') !important;\n' +
                 '  border-color: var(' + vSearchActBd + ') !important;\n' +
                 '}\n';
-            StyleInjector.inject(doc, 'tmk-btn-search-chrome', css);
+            StyleInjector.inject(doc, 'tmk-btn-search-style', css);
         }
     }
 
@@ -575,10 +580,7 @@
                 options.innerHTML = '<div class="tmk-title">' + esc(title) + '</div>';
             }
             super(options);
-            
-            if (this.constructor.ensureStyles) {
-                this.constructor.ensureStyles(options.document || document);
-            }
+            Tile.ensureStyles(options.document || document);
         }
 
         static ensureStyles(doc) {
@@ -663,10 +665,7 @@
                 self.checked = !self._checked;
             });
             this._updateUi();
-            
-            if (this.constructor.ensureStyles) {
-                this.constructor.ensureStyles(options.document || document);
-            }
+            Switch.ensureStyles(options.document || document);
         }
 
         static ensureStyles(doc) {
@@ -796,7 +795,6 @@
     }
 
 
-    const VIEW_SWITCH_WIDGET_STYLE_ID = 'tmk-vsw-widget-css';
     const ViewSwitch = {
         SCRIPT_DOM_ID: Object.freeze({
             ahlPnr: 'tmk-pnr-vsw',
@@ -830,9 +828,6 @@
             }
             st.textContent = css;
         },
-        injectStyles: function(doc) {
-            // Obsolete: managed by specific classes
-        },
         _createController: function(hostEl, options) {
             const inst = hostEl && hostEl.__tmkSwitchInstance;
             if (!inst) return null;
@@ -850,7 +845,6 @@
             const container = options.container;
             const vsId = options.viewSwitchId || options.id || 'tmk-vsw';
             if (!container || !d.body) return null;
-            ViewSwitch.injectStyles(d);
             let host = d.getElementById(vsId);
             if (!host) {
                 const initialMv =
@@ -933,43 +927,6 @@
                 backdrop-filter: blur(10px);
                 -webkit-backdrop-filter: blur(10px);
                 pointer-events: none;
-            }
-            .tmk-shared-toolbar {
-                position: fixed;
-                top: var(--tmk-toolbar-top, 10px);
-                right: var(--tmk-toolbar-right, 12px);
-                z-index: var(--tmk-z-main-function-view);
-                display: inline-flex;
-                align-items: center;
-                gap: var(--tmk-toolbar-gap, 6px);
-                padding: var(--tmk-toolbar-padding, 5px);
-                border-radius: var(--tmk-toolbar-radius, 999px);
-                background: var(--tmk-c-search-bg);
-                border: 1px solid var(--tmk-c-search-input-border);
-                box-shadow: var(--tmk-toolbar-shadow, 0 6px 16px rgba(23, 52, 86, 0.16));
-                backdrop-filter: blur(var(--tmk-toolbar-blur, 8px));
-                -webkit-backdrop-filter: blur(var(--tmk-toolbar-blur, 8px));
-            }
-            .tmk-shared-toolbar-btn {
-                min-height: var(--tmk-toolbar-btn-min-height, 30px);
-                padding: 0 var(--tmk-toolbar-btn-padding-x, 12px);
-                border-radius: var(--tmk-toolbar-btn-radius, 999px);
-                border: 1px solid var(--tmk-c-search-input-border);
-                background: var(--tmk-c-search-bg);
-                color: var(--tmk-c-major-font);
-                font-size: var(--tmk-toolbar-btn-font-size, 14px);
-                font-weight: 600;
-                cursor: pointer;
-                font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif;
-                transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-            }
-            .tmk-shared-toolbar-btn:hover {
-                border-color: var(--tmk-c-search-active-border, var(--tmk-c-search-input-border));
-            }
-            .tmk-shared-toolbar-btn.tmk-active {
-                background: var(--tmk-c-major-focus);
-                border-color: var(--tmk-c-major-focus);
-                color: var(--tmk-c-lv1-fg);
             }
             .tmk-pnr-field {
                 display: flex;

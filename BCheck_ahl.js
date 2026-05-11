@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         BCheckWeb 少收表
 // @namespace    http://tampermonkey.net/
-// @version      2.2.4
-// @description  新建少收：AHL仅壳显示；详情/信息/追踪进 tmk-stage；TN 规则同前；步骤条置顶透明；与少收表 v1 请勿同时启用
+// @version      0.3
+// @description  快捷页面的重新设计；整个少收页面都被重新改写。
 // @author       Gostnort
 // @match        http://60.247.100.98/BCheckWeb/*
 // @match        https://60.247.100.98/BCheckWeb/*

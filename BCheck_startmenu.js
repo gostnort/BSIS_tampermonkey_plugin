@@ -1,17 +1,17 @@
 ﻿// ==UserScript==
 // @name         BCheckWeb UI 瓷砖菜单
 // @namespace    http://tampermonkey.net/
-// @version      0.7.10
-// @description  增加滑动动画/精简部分代码
+// @version      0.8
+// @description  第一页为首页快捷菜单；第二页为一级菜单；第三页为次级菜单
 // @author       Gostnort
-// @match        http://60.247.100.98/BCheckWeb/*
-// @match        https://60.247.100.98/BCheckWeb/*
-// @match        http://202.96.17.98/BCheckWeb/*
-// @match        https://202.96.17.98/BCheckWeb/*
+// @match        http://*/BCheckWeb/*
+// @match        https://*/BCheckWeb/*
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @run-at       document-idle
 // ==/UserScript==
 
-(function() {
+(async function() {
     'use strict';
 
     function isUnderContentFrame() {
@@ -32,9 +32,26 @@
     const inTopWindow = window.top === window.self;
     const inContentFrame = !inTopWindow && isUnderContentFrame();
     if (!inTopWindow && !inContentFrame) return;
-    if (!window.__tmkUiToolset) return;
+    // 等待同 frame 内工具集就绪；若工具集晚于本脚本执行，原先此处同步 return 会导致菜单永不注入
+    async function ensureToolset(timeoutMs) {
+        const deadline = Date.now() + (Number.isFinite(timeoutMs) ? timeoutMs : 10000);
+        const interval = 40;
+        while (Date.now() < deadline) {
+            try {
+                if (window.__tmkUiToolset && typeof window.__tmkUiToolset === 'object') return true;
+                const topTs = window.top && window.top.__tmkUiToolset;
+                if (topTs && typeof topTs === 'object') {
+                    window.__tmkUiToolset = topTs;
+                    return true;
+                }
+            } catch (e) {}
+            await new Promise(function(r) { setTimeout(r, interval); });
+        }
+        return !!(window.__tmkUiToolset && typeof window.__tmkUiToolset === 'object');
+    }
+    const toolsetReady = await ensureToolset(1000);
+    if (!toolsetReady) return;
 
-    const MENU_BUTTON_ID = 'tmk-menu-button';
     const SEARCH_BUTTON_ID = 'tmk-search-button';
     const SEARCH_INPUT_ID = 'tmk-search-input';
     const PENDING_SEARCH_KEY = 'tmk-pending-search';
@@ -42,18 +59,31 @@
     const ACCEPT_STATION_COMPANY_KEY = 'tmk-accept-station-company';
     const ACCEPT_STATION_INPUT_ID = 'tmk-accept-station-input';
     const DEFAULT_ACCEPT_STATION_COMPANY = 'LAXCA';
+    const MENU_BUTTON_ID = 'tmk-menu-button';
     const OVERLAY_ID = 'tmk-overlay';
-    const ROOT_GRID_ID = 'tmk-root-grid';
+    const STARTMENU_ID = 'tmk-startmenu';
+    const FRONT_PAGE_ID = 'tmk-front-page';
+    const MAIN_PAGE_ID = 'tmk-main-page';
+    const SUB_PAGE_ID = 'tmk-sub-page';
+    const ROOT_GRID_ID = 'tmk-main-grid';
     const SUB_GRID_ID = 'tmk-sub-grid';
-    const SYSTEM_GRID_ID = 'tmk-system-grid';
+    const FRONT_GRID_ID = 'tmk-front-grid';
+    const HEADER_BAR_ID = 'tmk-startmenu-header';
+    const NAV_TO_MAIN_ID = 'tmk-nav-to-main';
+    const NAV_TO_FRONT_ID = 'tmk-nav-to-front';
+    const SLIDE_BTN_SHOW_CLASS = 'tmk-nav-btn--show';
+    const SLIDE_BTN_ACTIVE_CLASS = 'tmk-nav-btn--active';
+    const CONTEXT_MENU_ID = 'tmk-startmenu-contextmenu';
     const THEME_STORAGE_KEY = 'tmk-theme-index';
     const START_BTN_ID = 'tmk-start-theme-btn';
+    const STORE_FRONTPAGE_KEY = 'tmk.startmenu.frontpage';
+    const STORE_MAINMENU_KEY = 'tmk.startmenu.mainMenu';
+    const STORE_SUBMENU_KEY = 'tmk.startmenu.subMenu';
     const THEME_JSON_URL = 'https://raw.githubusercontent.com/Gostnort/BSIS_tampermonkey_plugin/main/BCheckWeb_theme.json';
-    const return_icon = 'data:image/png;base64,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';
     const search_icon = 'data:image/png;base64,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';
     const TOOLSET_GLOBAL_KEY = '__tmkUiToolset';
 
-    const state = { overlayOpen: false, showingSub: false, currentGroup: null, searchExpanded: false };
+    const state = { overlayOpen: false, page: 'front', currentGroup: null, searchExpanded: false, groups: [], contextMenuEl: null, suppressFrontClick: false, frontTileMap: {}, mainMenuSignature: '' };
 
 
     function resolveToolset() {
@@ -67,6 +97,33 @@
         if (topToolset && typeof topToolset === 'object') return topToolset;
         if (window[TOOLSET_GLOBAL_KEY] && typeof window[TOOLSET_GLOBAL_KEY] === 'object') return window[TOOLSET_GLOBAL_KEY];
         return null;
+    }
+
+
+    function storageGet(key, fallbackValue) {
+        try {
+            if (typeof GM_getValue === 'function') return GM_getValue(key, fallbackValue);
+        } catch (e) {}
+        try {
+            const raw = localStorage.getItem(key);
+            if (raw == null || raw === '') return fallbackValue;
+            return JSON.parse(raw);
+        } catch (e) {
+            return fallbackValue;
+        }
+    }
+
+
+    function storageSet(key, value) {
+        try {
+            if (typeof GM_setValue === 'function') {
+                GM_setValue(key, value);
+                return;
+            }
+        } catch (e) {}
+        try {
+            localStorage.setItem(key, JSON.stringify(value));
+        } catch (e) {}
     }
 
 
@@ -184,12 +241,14 @@
         const vw = window.innerWidth;
         const vh = window.innerHeight;
         const shortSide = Math.min(vw, vh);
-        const small = Math.max(46, Math.min(78, Math.round(shortSide * 0.07)));
-        const gap = Math.max(8, Math.min(16, Math.round(small * 0.22)));
-        const medium = small * 2;
+        const medium = Math.max(96, Math.min(176, Math.round(shortSide * 0.14)));
+        const gap = Math.max(6, Math.round(medium * 0.1));
+        // small 宽：medium - gap，使 (small + gap) == medium，保证列步进对齐 medium
+        const small = Math.max(28, Math.round(medium - gap));
+        // small 高：medium / 2，使 (small_h + gap) == medium/2 + gap，对齐大瓷砖的纵向节拍
+        const smallTileH = Math.max(24, Math.round(medium / 2));
         // 大 tile 宽度：两个 medium 并排 + 间距，供 Step2 等壳层与 --tmk-big-tile 共用
         const bigTile = medium * 2 + gap;
-        const smallTileH = (medium - gap) / 2;
         return {
             small: small,
             gap: gap,
@@ -275,17 +334,6 @@
                 --tmk-small: ${m.small}px; --tmk-medium: ${m.medium}px; --tmk-gap: ${m.gap}px;
                 --tmk-big-tile: ${m.bigTile}px;
                 --tmk-small-tile-h: ${m.smallTileH}px;
-                --tmk-toolbar-top: 10px;
-                --tmk-toolbar-right: 12px;
-                --tmk-toolbar-gap: 6px;
-                --tmk-toolbar-padding: 5px;
-                --tmk-toolbar-radius: 999px;
-                --tmk-toolbar-shadow: 0 6px 16px rgba(23, 52, 86, 0.16);
-                --tmk-toolbar-blur: 8px;
-                --tmk-toolbar-btn-min-height: 30px;
-                --tmk-toolbar-btn-padding-x: 12px;
-                --tmk-toolbar-btn-radius: 999px;
-                --tmk-toolbar-btn-font-size: 14px;
                 ${zv('basePage')}: ${z.basePage};
                 ${zv('backgroundCover')}: ${z.backgroundCover};
                 ${zv('mainFunctionView')}: ${z.mainFunctionView};
@@ -297,12 +345,12 @@
                 position: fixed!important; inset: 0!important; z-index: var(${zv('mainFunctionView')})!important;
                 display: none; background: var(${tc('overlayBackdrop')})!important; backdrop-filter: blur(10px);
             }
-            #tmk-panel-viewport {
+            #${STARTMENU_ID} {
                 position: relative !important;
                 z-index: var(${zv('mainFunctionView')}) !important;
                 display: flex !important;
                 flex-direction: row !important;
-                width: 200vw !important;
+                width: 300vw !important;
                 overflow: hidden !important;
                 transition: transform 0.3s ease !important;
                 will-change: transform;
@@ -313,7 +361,7 @@
                 height: 100% !important; overflow-y: auto !important;
                 box-sizing: border-box !important;
                 /* 修复 Padding 冲突：明确上下左右间距 */
-                padding-top: 50px !important;
+                padding-top: calc(var(--tmk-small-tile-h) + 52px) !important;
                 padding-bottom: 60px !important;
                 padding-right: 40px !important;
                 padding-left: clamp(80px, 12vw, 160px) !important;
@@ -339,12 +387,30 @@
                 font-size: ${m.h1Size}px !important; font-weight: 100 !important; color: var(${tc('h1')}) !important;
                 margin: 0 0 10px 0 !important; letter-spacing: -1px !important;
             }
+            .tmk-sub-h2 {
+                font-size: max(22px, calc(${m.h1Size}px * 0.72)) !important;
+                font-weight: 400 !important;
+                color: var(${tc('majorFont')}) !important;
+                margin: 0 0 10px 0 !important;
+                letter-spacing: 0 !important;
+            }
             .tmk-root-title-row {
                 display: flex !important; align-items: center !important; flex-wrap: wrap !important;
                 gap: 0.35em 0.55em !important; margin: 0 0 10px 0 !important;
                 position: relative !important;
                 z-index: var(${zv('functionButton')}) !important;
             }
+            #${HEADER_BAR_ID} {
+                position: fixed !important;
+                top: 18px !important;
+                left: 0 !important;
+                right: 0 !important;
+                padding-right: 40px !important;
+                padding-left: clamp(80px, 12vw, 160px) !important;
+                margin: 0 !important;
+                z-index: var(${zv('functionButton')}) !important;
+            }
+            #${HEADER_BAR_ID} .tmk-h1 { margin: 0 !important; }
             .tmk-root-title-row .tmk-h1 { margin: 0 !important; }
             .tmk-root-title-row .tmk-start-btn,
             .tmk-root-title-row #${ACCEPT_STATION_INPUT_ID} {
@@ -357,9 +423,6 @@
                 line-height: 1 !important;
             }
             .tmk-start-btn {
-                font-family: inherit !important;
-                font-weight: 100 !important;
-                letter-spacing: inherit !important;
                 background: transparent !important; border: none !important; padding: 0 4px !important; margin: 0 !important;
                 cursor: pointer !important; text-align: left !important;
                 -webkit-appearance: none !important; appearance: none !important; box-shadow: none !important;
@@ -368,59 +431,195 @@
             }
             #${ACCEPT_STATION_INPUT_ID} {
                 flex: 0 1 auto !important; min-width: 3.5em !important; max-width: 18em !important;
-                font-family: inherit !important; font-weight: 100 !important;
-                color: var(${tc('h1')}) !important; letter-spacing: -1px !important;
                 margin: 0 !important; padding: 0 8px !important; border: none !important; background: transparent !important;
                 outline: none !important; box-shadow: none !important; -webkit-appearance: none !important;
-                appearance: none !important;
+                appearance: none !important; color: var(${tc('h1')}) !important;
             }
             #${ACCEPT_STATION_INPUT_ID}::placeholder { color: inherit !important; opacity: 0.45 !important; }
             .tmk-active-tag { display: none !important; }
             .tmk-grid { display: grid !important; gap: var(--tmk-gap) !important; grid-template-columns: repeat(auto-fill, var(--tmk-medium)) !important; }
-            #${ROOT_GRID_ID}, #${SUB_GRID_ID}, #${SYSTEM_GRID_ID}, #tmk-pinned-grid {
+            #${ROOT_GRID_ID}, #${SUB_GRID_ID}, #${FRONT_GRID_ID} {
                 position: relative !important;
                 z-index: var(${zv('functionButton')}) !important;
             }
+            #${FRONT_GRID_ID} {
+                display: grid !important;
+                grid-auto-flow: dense !important;
+                gap: var(--tmk-gap) !important;
+                grid-template-columns: repeat(auto-fill, var(--tmk-small-tile-h)) !important;
+                grid-auto-rows: var(--tmk-small-tile-h) !important;
+                align-content: start !important;
+                min-height: calc(var(--tmk-small-tile-h) * 8) !important;
+                margin-top: calc(var(--tmk-medium) * 0.618) !important;
+            }
+            #${FRONT_GRID_ID}.tmk-front-grid-dragging {
+                background-image:
+                    linear-gradient(to right, rgba(90, 126, 165, 0.22) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(90, 126, 165, 0.22) 1px, transparent 1px);
+                background-size: calc(var(--tmk-small-tile-h) + var(--tmk-gap)) calc(var(--tmk-small-tile-h) + var(--tmk-gap));
+                background-position: 0 0;
+            }
+            #${FRONT_GRID_ID} .tmk-drop-preview {
+                position: absolute;
+                pointer-events: none;
+                border: 2px dashed rgba(42, 122, 220, 0.8);
+                background: rgba(42, 122, 220, 0.16);
+                box-sizing: border-box;
+                border-radius: 4px;
+                z-index: 20000;
+            }
+            #${FRONT_GRID_ID} .tmk-drop-preview.tmk-invalid {
+                border-color: rgba(220, 42, 42, 0.95);
+                background: rgba(220, 42, 42, 0.18);
+            }
+            .tmk-mainmenu-tile {
+                background: var(${tc('minorButton')}) !important;
+                color: var(${tc('majorFont')}) !important;
+                border: 1px solid var(${tc('minorFocus')}) !important;
+            }
+            #${ROOT_GRID_ID} { margin-top: calc(var(--tmk-medium) * 0.618) !important; }
 
-            /* 常驻少收：两侧大磁贴 + 中间标准磁贴 */
-            #tmk-pinned-grid.tmk-pinned-grid--wide {
-                grid-template-columns: var(--tmk-big-tile) var(--tmk-medium) var(--tmk-big-tile) !important;
+            .tmk-nav-btn {
+                position: fixed !important;
+                top: 0 !important;
+                bottom: 0 !important;
+                transform: none !important;
+                width: 34px !important;
+                height: auto !important;
+                border-radius: 0 !important;
+                background: transparent !important;
+                border: none !important;
+                color: var(${tc('h1')}) !important;
+                font-size: 42px !important;
+                line-height: 1 !important;
+                cursor: pointer !important;
+                -webkit-appearance: none !important;
+                appearance: none !important;
+                z-index: var(${zv('functionButton')}) !important;
                 align-items: center !important;
+                justify-content: center !important;
+                padding: 0 !important;
+                display: none !important;
+                opacity: 0 !important;
+                pointer-events: none !important;
+                transition: opacity 0.16s ease, filter 0.16s ease, text-shadow 0.16s ease, box-shadow 0.16s ease !important;
             }
-
-            /* 黄金比例间距：常驻区与主网格、主网格与系统行 */
-            #${ROOT_GRID_ID}, #${SYSTEM_GRID_ID} { margin-top: calc(var(--tmk-medium) * 0.618) !important; }
-
-            #${SYSTEM_GRID_ID} {
-                grid-template-columns: var(--tmk-medium) !important;
-                justify-content: start !important;
+            .tmk-nav-btn.${SLIDE_BTN_SHOW_CLASS} {
+                display: flex !important;
+                opacity: 0.72 !important;
+                pointer-events: auto !important;
+                background: transparent !important;
+                border: none !important;
             }
-
+            .tmk-nav-btn.${SLIDE_BTN_ACTIVE_CLASS} {
+                opacity: 1 !important;
+                background: transparent !important;
+                color: var(${tc('minorButton')}) !important;
+                text-shadow: 0 0 1px rgba(255,255,255,0.72), 0 0 14px rgba(120,170,220,0.45) !important;
+                box-shadow: none !important;
+            }
+            .tmk-nav-btn.${SLIDE_BTN_SHOW_CLASS}:hover,
+            .tmk-nav-btn.${SLIDE_BTN_SHOW_CLASS}:focus-visible {
+                opacity: 1 !important;
+                background: transparent !important;
+                color: var(${tc('minorButton')}) !important;
+                filter: brightness(1.1) !important;
+                text-shadow: 0 0 2px rgba(255,255,255,0.82), 0 0 14px color-mix(in srgb, var(${tc('minorButton')}) 72%, transparent) !important;
+            }
+            .tmk-nav-btn.${SLIDE_BTN_SHOW_CLASS}:focus-visible {
+                outline: none !important;
+            }
+            #${NAV_TO_MAIN_ID} { right: 6px !important; }
+            #${NAV_TO_FRONT_ID} { left: 6px !important; }
 
         `;
     }
 
     // --- 4. 标题联动逻辑 ---
-    function showRootPage(overlay, menuBtn) {
-        const vp = overlay.querySelector('#tmk-panel-viewport');
+    function setSlideButtonState(btn, show, active) {
+        if (!btn) return;
+        const visible = !!show;
+        const highlighted = visible && !!active;
+        btn.classList.toggle(SLIDE_BTN_SHOW_CLASS, visible);
+        btn.classList.toggle(SLIDE_BTN_ACTIVE_CLASS, highlighted);
+        btn.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        btn.setAttribute('aria-disabled', visible ? 'false' : 'true');
+    }
+
+
+    function getSlideButtonConfig() {
+        if (!state.overlayOpen) return { showMain: false, showFront: false, active: '' };
+        if (state.page === 'front') return { showMain: true, showFront: false, active: 'main' };
+        if (state.page === 'main') return { showMain: false, showFront: true, active: 'front' };
+        if (state.page === 'sub') return { showMain: false, showFront: true, active: 'front' };
+        return { showMain: false, showFront: false, active: '' };
+    }
+
+
+    function updateSlideButtons(overlay) {
+        if (!overlay) return;
+        const toMain = overlay.querySelector('#' + NAV_TO_MAIN_ID);
+        const toFront = overlay.querySelector('#' + NAV_TO_FRONT_ID);
+        if (!toMain || !toFront) return;
+        const cfg = getSlideButtonConfig();
+        setSlideButtonState(toMain, cfg.showMain, cfg.active === 'main');
+        setSlideButtonState(toFront, cfg.showFront, cfg.active === 'front');
+    }
+
+    function showFrontPage(overlay, menuBtn) {
+        const vp = overlay.querySelector('#' + STARTMENU_ID);
         if (vp) vp.style.transform = 'translateX(0)';
-        const h1 = overlay.querySelector('#tmk-root-page .tmk-start-btn') || overlay.querySelector('#tmk-root-page .tmk-h1');
-        if (h1) h1.textContent = '开始';
-        state.showingSub = false;
+        state.page = 'front';
         menuBtn.textContent = '✕';
         menuBtn.style.backgroundImage = '';
         menuBtn.style.backgroundSize = '';
         menuBtn.style.backgroundRepeat = '';
         menuBtn.style.backgroundPosition = '';
+        updateSlideButtons(overlay);
     }
 
-    function showSubPage(overlay, menuBtn, titleText) {
-        const vp = overlay.querySelector('#tmk-panel-viewport');
+
+    function showMainPage(overlay, menuBtn) {
+        const vp = overlay.querySelector('#' + STARTMENU_ID);
         if (vp) vp.style.transform = 'translateX(-100vw)';
-        const subH1 = overlay.querySelector('#tmk-sub-page .tmk-h1');
-        if (subH1) subH1.textContent = titleText || '业务';
-        state.showingSub = true;
-        menuBtn.innerHTML = `<img src="${return_icon}" alt="" draggable="false" style="width:30px;height:30px;display:block;object-fit:contain;">`;
+        state.page = 'main';
+        menuBtn.textContent = '✕';
+        menuBtn.style.backgroundImage = '';
+        menuBtn.style.backgroundSize = '';
+        menuBtn.style.backgroundRepeat = '';
+        menuBtn.style.backgroundPosition = '';
+        updateSlideButtons(overlay);
+    }
+
+
+    function showSubPage(overlay, menuBtn, titleText) {
+        const vp = overlay.querySelector('#' + STARTMENU_ID);
+        if (vp) vp.style.transform = 'translateX(-200vw)';
+        const subH2 = overlay.querySelector('#' + SUB_PAGE_ID + ' .tmk-sub-h2');
+        if (subH2) subH2.textContent = titleText || '业务';
+        state.page = 'sub';
+        menuBtn.textContent = '✕';
+        menuBtn.style.backgroundImage = '';
+        menuBtn.style.backgroundSize = '';
+        menuBtn.style.backgroundRepeat = '';
+        menuBtn.style.backgroundPosition = '';
+        updateSlideButtons(overlay);
+    }
+
+    function closeStartMenu(overlay, menuBtn) {
+        if (overlay) overlay.style.display = 'none';
+        state.overlayOpen = false;
+        state.page = 'front';
+        try {
+            menuBtn.textContent = '☰';
+            menuBtn.style.backgroundImage = '';
+            menuBtn.style.backgroundSize = '';
+            menuBtn.style.backgroundRepeat = '';
+            menuBtn.style.backgroundPosition = '';
+        } catch (e) {}
+        setUiOverlayState(false);
+        setSearchShortcutVisible(false);
+        updateSlideButtons(overlay);
     }
 
     // --- 5. 磁贴等级色（lv1 核心高频 … lv5 系统边缘）---
@@ -441,14 +640,6 @@
     }
 
 
-    // 常驻区第一行：两侧大磁贴（新建少收查询 / 少收查看）
-    function tileSizePinnedClass(title) {
-        const t = String(title || '').trim();
-        if (/新建少收查询/.test(t) || /少收查看/.test(t)) return 'tmk-tile--big';
-        return '';
-    }
-
-
     // 第三级辅助工具：快速查找 / 信息处理区 
     function tileLv3OutlineClass(title) {
         const t = String(title || '').trim();
@@ -457,57 +648,531 @@
     }
 
 
-    // --- 6. 菜单渲染与绑定 ---
-    function renderTiles(doc, overlay, menuBtn) {
-        const rootGrid = doc.getElementById(ROOT_GRID_ID);
-        const pinnedGrid = doc.getElementById('tmk-pinned-grid');
-        const systemGrid = doc.getElementById(SYSTEM_GRID_ID);
+    function parseMenuGroups() {
         const mf = window.top.frames.menu_frame;
-        if (!mf || !mf.document || !rootGrid) return;
-
+        if (!mf || !mf.document) return [];
         const headers = Array.from(mf.document.querySelectorAll('.menuheaders'));
         const contents = Array.from(mf.document.querySelectorAll('.menucontents'));
-        const groups = headers.map((h, i) => ({
+        return headers.map((h, i) => ({
             title: h.textContent.trim(),
             links: Array.from(contents[i].querySelectorAll('a')).map(a => ({
                 text: a.textContent.trim(), href: extractHref(a)
             })).filter(l => l.href)
         })).filter(g => g.links.length > 0);
+    }
 
-        rootGrid.innerHTML = '';
-        pinnedGrid.innerHTML = '';
-        pinnedGrid.classList.remove('tmk-pinned-grid--wide');
-        if (systemGrid) systemGrid.innerHTML = '';
+
+    function levelClassFromVariant(variant) {
+        const v = String(variant || '').trim();
+        if (/^tmk-lv[1-5]$/.test(v)) return v;
+        if (/^lv[1-5]$/.test(v)) return 'tmk-' + v;
+        return 'tmk-lv4';
+    }
+
+
+    function spanBySize(size) {
+        const s = String(size || 'medium').trim();
+        if (s === 'small') return { w: 1, h: 1, cls: 'tmk-tile--small' };
+        if (s === 'big') return { w: 4, h: 2, cls: 'tmk-tile--big' };
+        return { w: 2, h: 2, cls: '' };
+    }
+
+
+    function normalizeFrontItem(item, index) {
+        const it = item || {};
+        const id = String(it.id || ('front-' + index));
+        const kind = String(it.kind || 'link');
+        const size = /^(small|medium|big)$/.test(String(it.size || '')) ? String(it.size) : 'big';
+        const levelClass = levelClassFromVariant(it.colorVariant || it.levelClass || 'lv1');
+        const x = Number.isFinite(Number(it.x)) ? Math.max(0, Math.floor(Number(it.x))) : index * 4;
+        const y = Number.isFinite(Number(it.y)) ? Math.max(0, Math.floor(Number(it.y))) : 0;
+        return {
+            id: id,
+            kind: kind === 'group' ? 'group' : 'link',
+            title: String(it.title || ''),
+            href: String(it.href || ''),
+            groupTitle: String(it.groupTitle || ''),
+            size: size,
+            colorVariant: levelClass.replace(/^tmk-/, ''),
+            levelClass: levelClass,
+            x: x,
+            y: y
+        };
+    }
+
+
+    function defaultFrontItemsFromGroups(groups) {
         const lostG = groups.find(g => /少收/.test(g.title));
-        const sysG = groups.find(g => /系统维护/.test(g.title));
+        const row = lostG ? lostG.links.slice(0, 3) : [];
+        return row.map((l, idx) => ({
+            id: 'front-' + idx + '-' + String(l.text).replace(/\s+/g, ''),
+            kind: 'link',
+            title: l.text,
+            href: l.href,
+            size: 'big',
+            colorVariant: 'lv1',
+            x: idx * 4,
+            y: 0
+        }));
+    }
 
-        // 常驻区（不含退出；大|中|大 时加宽列模板）
-        if (lostG) {
-            const row = lostG.links.slice(0, 3);
-            if (row.length >= 3) pinnedGrid.classList.add('tmk-pinned-grid--wide');
-            row.forEach(l => {
-                pinnedGrid.appendChild(buildTile(doc, l.text, 'tmk-lv1', () => {
-                    navigateLink(overlay, menuBtn, l.text, l.href);
-                }, tileSizePinnedClass(l.text), tileLv3OutlineClass(l.text)));
-            });
+
+    function loadFrontItems(groups) {
+        const stored = storageGet(STORE_FRONTPAGE_KEY, null);
+        if (stored && Array.isArray(stored.items) && stored.items.length > 0) {
+            return stored.items.map((it, idx) => normalizeFrontItem(it, idx));
         }
+        const defaults = defaultFrontItemsFromGroups(groups);
+        storageSet(STORE_FRONTPAGE_KEY, { items: defaults, updatedAt: Date.now() });
+        return defaults.map((it, idx) => normalizeFrontItem(it, idx));
+    }
 
-        // 主菜单（不含少收整组、不含系统维护整组）
-        groups.forEach(g => {
-            if (lostG && g.title === lostG.title) return;
-            if (sysG && g.title === sysG.title) return;
-            rootGrid.appendChild(buildSubGroupTile(doc, overlay, menuBtn, g, ''));
+
+    function saveFrontItems(items) {
+        const safe = Array.isArray(items) ? items.map((it, idx) => normalizeFrontItem(it, idx)) : [];
+        storageSet(STORE_FRONTPAGE_KEY, { items: safe, updatedAt: Date.now() });
+    }
+
+
+    function persistMenuMirror(groups) {
+        const mainItems = [];
+        const subItems = {};
+        groups.forEach((g, gi) => {
+            mainItems.push({
+                id: 'main-' + gi,
+                title: g.title,
+                size: 'medium',
+                colorVariant: 'minorButton',
+                order: gi
+            });
+            subItems[g.title] = g.links.map((l, li) => ({
+                id: 'sub-' + gi + '-' + li,
+                title: l.text,
+                href: l.href,
+                size: 'medium',
+                colorVariant: 'minorButton',
+                order: li
+            }));
         });
+        storageSet(STORE_MAINMENU_KEY, { items: mainItems, updatedAt: Date.now() });
+        storageSet(STORE_SUBMENU_KEY, { groups: subItems, updatedAt: Date.now() });
+    }
 
-        // 第三行：退出系统 + 系统维护（小磁贴）
-        if (systemGrid) {
-            systemGrid.appendChild(buildTile(doc, '退出系统', 'tmk-lv5', () => {
-                window.top.location.href = getLogoutUrl();
-            }, 'tmk-tile--small'));
-            if (sysG) {
-                systemGrid.appendChild(buildSubGroupTile(doc, overlay, menuBtn, sysG, 'tmk-tile--small'));
+
+    function ensureContextMenu(doc) {
+        let menu = doc.getElementById(CONTEXT_MENU_ID);
+        if (menu) return menu;
+        menu = doc.createElement('div');
+        menu.id = CONTEXT_MENU_ID;
+        menu.style.cssText = 'position:fixed;display:none;z-index:2147483647;background:#fff;border:1px solid rgba(0,0,0,.25);border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.25);min-width:180px;padding:4px;';
+        doc.body.appendChild(menu);
+        doc.addEventListener('click', () => {
+            menu.style.display = 'none';
+        });
+        state.contextMenuEl = menu;
+        return menu;
+    }
+
+
+    function openContextMenu(doc, x, y, entries) {
+        const menu = ensureContextMenu(doc);
+        menu.innerHTML = '';
+        entries.forEach((entry) => {
+            const btn = doc.createElement('button');
+            btn.type = 'button';
+            btn.textContent = entry.label;
+            btn.style.cssText = 'display:block;width:100%;text-align:left;padding:7px 10px;border:none;background:transparent;cursor:pointer;';
+            btn.onmouseenter = () => { btn.style.background = 'rgba(0,0,0,.08)'; };
+            btn.onmouseleave = () => { btn.style.background = 'transparent'; };
+            btn.onclick = (evt) => {
+                evt.preventDefault();
+                evt.stopPropagation();
+                menu.style.display = 'none';
+                if (typeof entry.action === 'function') entry.action();
+            };
+            menu.appendChild(btn);
+        });
+        menu.style.left = x + 'px';
+        menu.style.top = y + 'px';
+        menu.style.display = 'block';
+    }
+
+
+    function addLinkToFrontpage(link) {
+        const item = link || {};
+        const items = loadFrontItems(state.groups);
+        const next = normalizeFrontItem({
+            id: 'front-' + Date.now(),
+            kind: item.kind || 'link',
+            title: String(item.text || item.title || ''),
+            href: String(item.href || ''),
+            groupTitle: String(item.groupTitle || ''),
+            size: 'medium',
+            colorVariant: 'lv1',
+            x: 0,
+            y: 0
+        }, items.length);
+        // 使用网格占用扫描，避免启发式跳点造成位置漂移和效率不稳定
+        const slot = findFirstFrontSlot(items, next.size, -1);
+        if (!slot) {
+            alert('首页网格已满，无法添加新磁贴。');
+            return false;
+        }
+        next.x = slot.x;
+        next.y = slot.y;
+        items.push(next);
+        saveFrontItems(items);
+        return true;
+    }
+
+
+    function getFrontGridMetrics() {
+        const m = calcUiMetrics();
+        // 首页拖拽/占格统一采用正方网格：单元边长取 smallTileH
+        const small = Number(m.smallTileH) || 32;
+        const gap = Number(m.gap) || 8;
+        const pitch = small + gap;
+        return { small, gap, pitch };
+    }
+
+
+    function frontRectFromItem(item) {
+        const span = spanBySize(item.size);
+        return { x: item.x, y: item.y, w: span.w, h: span.h };
+    }
+
+
+    function isRectOverlap(a, b) {
+        return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
+    }
+
+
+    function hasFrontCollision(items, targetRect, ignoreIndex) {
+        for (let i = 0; i < items.length; i += 1) {
+            if (i === ignoreIndex) continue;
+            if (isRectOverlap(frontRectFromItem(items[i]), targetRect)) return true;
+        }
+        return false;
+    }
+
+
+    function getFrontGridColumnCapacity() {
+        const { gap, pitch } = getFrontGridMetrics();
+        const el = document.getElementById(FRONT_GRID_ID);
+        const width = el && el.clientWidth ? el.clientWidth : Math.max(window.innerWidth - 120, 320);
+        const cols = Math.max(6, Math.floor((width + gap) / pitch));
+        return cols;
+    }
+
+
+    function findFirstFrontSlot(items, size, ignoreIndex) {
+        const span = spanBySize(size);
+        const cols = getFrontGridColumnCapacity();
+        const maxRows = 200;
+        for (let y = 0; y < maxRows; y += 1) {
+            const maxX = Math.max(0, cols - span.w);
+            for (let x = 0; x <= maxX; x += 1) {
+                const target = { x, y, w: span.w, h: span.h };
+                if (!hasFrontCollision(items, target, ignoreIndex)) {
+                    return { x, y };
+                }
             }
         }
+        return null;
+    }
+
+
+    function findFrontItemIndexById(items, itemId) {
+        const id = String(itemId || '');
+        return items.findIndex((it) => String(it.id) === id);
+    }
+
+
+    function ensureDropPreview(frontGrid) {
+        let preview = frontGrid.querySelector('.tmk-drop-preview');
+        if (preview) return preview;
+        preview = frontGrid.ownerDocument.createElement('div');
+        preview.className = 'tmk-drop-preview';
+        preview.style.display = 'none';
+        frontGrid.appendChild(preview);
+        return preview;
+    }
+
+
+    function mountFrontDrag(tile, frontGrid, itemId, doc, overlay, menuBtn) {
+        let startX = 0;
+        let startY = 0;
+        let dragActivated = false;
+        let dropValid = false;
+        let nextPos = null;
+        const preview = ensureDropPreview(frontGrid);
+        let dragItems = [];
+        let dragIndex = -1;
+        let span = spanBySize('medium');
+        const { small, gap, pitch } = getFrontGridMetrics();
+
+        const applyPreview = (x, y, valid) => {
+            const width = span.w * small + (span.w - 1) * gap;
+            const height = span.h * small + (span.h - 1) * gap;
+            preview.style.display = 'block';
+            preview.style.left = (x * pitch) + 'px';
+            preview.style.top = (y * pitch) + 'px';
+            preview.style.width = width + 'px';
+            preview.style.height = height + 'px';
+            preview.classList.toggle('tmk-invalid', !valid);
+        };
+
+        const onMove = (evt) => {
+            const dx = evt.clientX - startX;
+            const dy = evt.clientY - startY;
+            if (!dragActivated) {
+                const dist = Math.hypot(dx, dy);
+                if (dist < pitch) return;
+                dragActivated = true;
+                frontGrid.classList.add('tmk-front-grid-dragging');
+            }
+            const rect = frontGrid.getBoundingClientRect();
+            const gx = Math.max(0, Math.floor((evt.clientX - rect.left) / pitch));
+            const gy = Math.max(0, Math.floor((evt.clientY - rect.top) / pitch));
+            nextPos = { x: gx, y: gy };
+            const targetRect = { x: gx, y: gy, w: span.w, h: span.h };
+            dropValid = !hasFrontCollision(dragItems, targetRect, dragIndex);
+            applyPreview(gx, gy, dropValid);
+            evt.preventDefault();
+        };
+
+        const onUp = () => {
+            doc.removeEventListener('pointermove', onMove);
+            doc.removeEventListener('pointerup', onUp);
+            frontGrid.classList.remove('tmk-front-grid-dragging');
+            preview.style.display = 'none';
+            if (!dragActivated) return;
+            state.suppressFrontClick = true;
+            if (dropValid && nextPos) {
+                dragItems[dragIndex].x = nextPos.x;
+                dragItems[dragIndex].y = nextPos.y;
+                saveFrontItems(dragItems);
+            }
+            renderFrontPage(doc, overlay, menuBtn);
+        };
+
+        tile.addEventListener('pointerdown', (evt) => {
+            if (evt.button !== 0) return;
+            startX = evt.clientX;
+            startY = evt.clientY;
+            dragActivated = false;
+            dropValid = false;
+            nextPos = null;
+            dragItems = loadFrontItems(state.groups);
+            dragIndex = findFrontItemIndexById(dragItems, itemId);
+            if (dragIndex < 0) return;
+            span = spanBySize(dragItems[dragIndex].size);
+            doc.addEventListener('pointermove', onMove);
+            doc.addEventListener('pointerup', onUp);
+        });
+    }
+
+
+    function openFrontTileContextMenu(doc, itemId, x, y, overlay, menuBtn) {
+        const refreshed = loadFrontItems(state.groups);
+        const idx = findFrontItemIndexById(refreshed, itemId);
+        if (idx < 0) return;
+        const current = refreshed[idx];
+        const colorEntries = [
+            { label: '配色：lv1', value: 'lv1' },
+            { label: '配色：lv2', value: 'lv2' },
+            { label: '配色：lv3', value: 'lv3' },
+            { label: '配色：lv4', value: 'lv4' }
+        ];
+        openContextMenu(doc, x, y, [
+            { label: '尺寸：小', action: () => { current.size = 'small'; saveFrontItems(refreshed); renderFrontPage(doc, overlay, menuBtn); } },
+            { label: '尺寸：中', action: () => { current.size = 'medium'; saveFrontItems(refreshed); renderFrontPage(doc, overlay, menuBtn); } },
+            { label: '尺寸：大', action: () => { current.size = 'big'; saveFrontItems(refreshed); renderFrontPage(doc, overlay, menuBtn); } },
+            ...colorEntries.map((ce) => ({ label: ce.label, action: () => { current.colorVariant = ce.value; current.levelClass = levelClassFromVariant(ce.value); saveFrontItems(refreshed); renderFrontPage(doc, overlay, menuBtn); } })),
+            { label: '从首页移除', action: () => { refreshed.splice(idx, 1); saveFrontItems(refreshed); renderFrontPage(doc, overlay, menuBtn); } }
+        ]);
+    }
+
+
+    function handleFrontTileClick(itemId, doc, overlay, menuBtn) {
+        if (state.suppressFrontClick) {
+            state.suppressFrontClick = false;
+            return;
+        }
+        const items = loadFrontItems(state.groups);
+        const idx = findFrontItemIndexById(items, itemId);
+        if (idx < 0) return;
+        const it = items[idx];
+        if (it.kind === 'group') {
+            const group = state.groups.find((g) => g.title === it.groupTitle || g.title === it.title);
+            if (group) {
+                const subGrid = doc.getElementById(SUB_GRID_ID);
+                subGrid.innerHTML = '';
+                group.links.forEach(l => {
+                    subGrid.appendChild(buildTile(doc, l.text, 'tmk-lv4', () => {
+                        navigateLink(overlay, menuBtn, l.text, l.href);
+                    }, '', 'tmk-mainmenu-tile', {
+                        onContextMenu: (evt) => {
+                            evt.preventDefault();
+                            openContextMenu(doc, evt.clientX, evt.clientY, [
+                                {
+                                    label: '添加到首页',
+                                    action: () => {
+                                        addLinkToFrontpage(l);
+                                        renderFrontPage(doc, overlay, menuBtn);
+                                    }
+                                }
+                            ]);
+                        }
+                    }));
+                });
+                showSubPage(overlay, menuBtn, group.title);
+                return;
+            }
+        }
+        navigateLink(overlay, menuBtn, it.title, it.href);
+    }
+
+
+    function ensureFrontTileNode(doc, frontGrid, itemId, overlay, menuBtn) {
+        let tile = state.frontTileMap[itemId];
+        if (tile && tile.isConnected) return tile;
+        tile = buildTile(doc, '', 'tmk-lv4', () => {
+            handleFrontTileClick(itemId, doc, overlay, menuBtn);
+        }, '', '', {
+            onContextMenu: (evt) => {
+                evt.preventDefault();
+                openFrontTileContextMenu(doc, itemId, evt.clientX, evt.clientY, overlay, menuBtn);
+            }
+        });
+        tile.dataset.frontId = itemId;
+        mountFrontDrag(tile, frontGrid, itemId, doc, overlay, menuBtn);
+        state.frontTileMap[itemId] = tile;
+        return tile;
+    }
+
+
+    function updateFrontTileNode(tile, it) {
+        const titleNode = tile.querySelector('.tmk-title');
+        if (titleNode) titleNode.textContent = it.title;
+        tile.classList.remove('tmk-lv1', 'tmk-lv2', 'tmk-lv3', 'tmk-lv4', 'tmk-lv5', 'tmk-tile--small', 'tmk-tile--big');
+        tile.classList.add(it.levelClass);
+        const span = spanBySize(it.size);
+        if (span.cls) tile.classList.add(span.cls);
+        tile.style.gridColumn = String(it.x + 1) + ' / span ' + String(span.w);
+        tile.style.gridRow = String(it.y + 1) + ' / span ' + String(span.h);
+    }
+
+
+    function renderFrontPage(doc, overlay, menuBtn) {
+        const frontGrid = doc.getElementById(FRONT_GRID_ID);
+        if (!frontGrid) return;
+        const items = loadFrontItems(state.groups);
+        const itemById = {};
+        items.forEach((it) => { itemById[String(it.id)] = it; });
+
+        Object.keys(state.frontTileMap).forEach((id) => {
+            if (itemById[id]) return;
+            const node = state.frontTileMap[id];
+            if (node && node.parentNode) node.parentNode.removeChild(node);
+            delete state.frontTileMap[id];
+        });
+
+        const fragment = doc.createDocumentFragment();
+        items.forEach((it) => {
+            const tile = ensureFrontTileNode(doc, frontGrid, String(it.id), overlay, menuBtn);
+            updateFrontTileNode(tile, it);
+            fragment.appendChild(tile);
+        });
+        frontGrid.replaceChildren(fragment);
+    }
+
+
+    // --- 6. 菜单渲染与绑定 ---
+    function renderTiles(doc, overlay, menuBtn) {
+        const rootGrid = doc.getElementById(ROOT_GRID_ID);
+        if (!rootGrid) return;
+        const groups = parseMenuGroups();
+        const signature = groups.map((g) => g.title + '|' + g.links.map((l) => l.text + ':' + l.href).join(',')).join('||');
+        const menuChanged = state.mainMenuSignature !== signature || rootGrid.children.length === 0;
+        state.groups = groups;
+        if (menuChanged) {
+            persistMenuMirror(groups);
+            const fragment = doc.createDocumentFragment();
+            groups.forEach(g => {
+                fragment.appendChild(buildSubGroupTile(doc, overlay, menuBtn, g, '', {
+                    levelClass: 'tmk-lv4',
+                    extraClass: 'tmk-mainmenu-tile',
+                    linkLevelClass: 'tmk-lv4',
+                    linkExtraClass: 'tmk-mainmenu-tile',
+                    onContextMenu: (evt) => {
+                        evt.preventDefault();
+                        openContextMenu(doc, evt.clientX, evt.clientY, [
+                            {
+                                label: '添加到首页',
+                                action: () => {
+                                    addLinkToFrontpage({ kind: 'group', text: g.title, groupTitle: g.title });
+                                    renderFrontPage(doc, overlay, menuBtn);
+                                }
+                            }
+                        ]);
+                    }
+                }));
+            });
+            fragment.appendChild(buildTile(doc, '退出系统', 'tmk-lv4', () => {
+                window.top.location.href = getLogoutUrl();
+            }, '', 'tmk-mainmenu-tile', {
+                onContextMenu: (evt) => {
+                    evt.preventDefault();
+                    openContextMenu(doc, evt.clientX, evt.clientY, [
+                        {
+                            label: '添加到首页',
+                            action: () => {
+                                addLinkToFrontpage({ text: '退出系统', href: getLogoutUrl(), kind: 'link' });
+                                renderFrontPage(doc, overlay, menuBtn);
+                            }
+                        }
+                    ]);
+                }
+            }));
+            rootGrid.replaceChildren(fragment);
+            state.mainMenuSignature = signature;
+        }
+        renderFrontPage(doc, overlay, menuBtn);
+        assertStartmenuInvariants(doc);
+    }
+
+
+    function assertStartmenuInvariants(doc) {
+        if (!doc) return;
+        // 断言：旧版容器命名不允许回流；若出现说明逻辑回退，直接移除并报错
+        const legacyIds = ['tmk-panel-viewport', 'tmk-root-page', 'tmk-root-grid', 'tmk-pinned-grid', 'tmk-system-grid'];
+        let hasLegacy = false;
+        legacyIds.forEach((id) => {
+            const legacyEl = doc.getElementById(id);
+            if (!legacyEl) return;
+            hasLegacy = true;
+            try {
+                if (legacyEl.parentNode) legacyEl.parentNode.removeChild(legacyEl);
+            } catch (e) {}
+        });
+        console.assert(!hasLegacy, '[startmenu] 检测到旧版容器命名，已触发防回退移除');
+        if (hasLegacy) {
+            throw new Error('[startmenu] 触发防回退断言：旧版容器命名不允许出现');
+        }
+        // 断言：第二页/第三页只允许 medium 规格，不允许 small/big 样式类混入
+        const checkIllegalSize = (gridId, gridName) => {
+            const grid = doc.getElementById(gridId);
+            if (!grid) return;
+            const illegal = grid.querySelectorAll('.tmk-tile--small, .tmk-tile--big');
+            const ok = illegal.length === 0;
+            console.assert(ok, '[startmenu] ' + gridName + ' 出现非法尺寸类，数量=' + String(illegal.length));
+            if (!ok) {
+                throw new Error('[startmenu] 触发防回退断言：' + gridName + ' 不允许 small/big tile');
+            }
+        };
+        checkIllegalSize(ROOT_GRID_ID, 'mainMenu');
+        checkIllegalSize(SUB_GRID_ID, 'subMenu');
     }
 
     function armScriptGateFromNavigation(href, linkText) {
@@ -529,21 +1194,40 @@
     }
 
 
-    function buildSubGroupTile(doc, overlay, menuBtn, group, sizeCls) {
-        return buildTile(doc, group.title, tileLevelClass(group.title, group.title), () => {
+    function buildSubGroupTile(doc, overlay, menuBtn, group, sizeCls, opts) {
+        const options = opts || {};
+        const groupLevelClass = options.levelClass || tileLevelClass(group.title, group.title);
+        const groupExtraClass = [tileLv3OutlineClass(group.title), options.extraClass || ''].filter(Boolean).join(' ');
+        return buildTile(doc, group.title, groupLevelClass, () => {
             const subGrid = doc.getElementById(SUB_GRID_ID);
             subGrid.innerHTML = '';
             group.links.forEach(l => {
-                subGrid.appendChild(buildTile(doc, l.text, tileLevelClass(l.text, group.title), () => {
+                const linkLevelClass = options.linkLevelClass || tileLevelClass(l.text, group.title);
+                const linkExtraClass = [tileLv3OutlineClass(l.text), options.linkExtraClass || ''].filter(Boolean).join(' ');
+                subGrid.appendChild(buildTile(doc, l.text, linkLevelClass, () => {
                     navigateLink(overlay, menuBtn, l.text, l.href);
-                }, '', tileLv3OutlineClass(l.text)));
+                }, '', linkExtraClass, {
+                    onContextMenu: (evt) => {
+                        evt.preventDefault();
+                        openContextMenu(doc, evt.clientX, evt.clientY, [
+                            {
+                                label: '添加到首页',
+                                action: () => {
+                                    addLinkToFrontpage(l);
+                                    renderFrontPage(doc, overlay, menuBtn);
+                                }
+                            }
+                        ]);
+                    }
+                }));
             });
             showSubPage(overlay, menuBtn, group.title);
-        }, sizeCls || '', tileLv3OutlineClass(group.title));
+        }, sizeCls || '', groupExtraClass, options);
     }
 
 
-    function buildTile(doc, title, cls, onClick, sizeCls, extraCls) {
+    function buildTile(doc, title, cls, onClick, sizeCls, extraCls, opts) {
+        const options = opts || {};
         const tsb = resolveToolset();
         let Ctor = tsb.MediumTile;
         if (sizeCls && /tmk-tile--big/.test(sizeCls)) Ctor = tsb.BigTile;
@@ -555,11 +1239,15 @@
             extraClass: extraCls || '',
             onClick: onClick
         });
+        if (typeof options.onContextMenu === 'function') {
+            inst.nativeElement.addEventListener('contextmenu', options.onContextMenu);
+        }
         return inst.nativeElement;
     }
 
     function closeStartMenu(overlay, menuBtn) {
         overlay.style.display = 'none'; state.overlayOpen = false;
+        state.page = 'front';
         menuBtn.textContent = '☰';
         menuBtn.style.backgroundImage = '';
         menuBtn.style.backgroundSize = '';
@@ -873,19 +1561,22 @@
                 document.body.appendChild(menuBtn);
                 const overlay = document.createElement('div'); overlay.id = OVERLAY_ID;
                 overlay.innerHTML = `
-                    <div id="tmk-panel-viewport">
-                        <section class="tmk-page" id="tmk-root-page">
-                            <div class="tmk-root-title-row">
-                                <button type="button" id="${START_BTN_ID}" class="tmk-h1 tmk-start-btn">开始</button>
-                                <input type="text" id="${ACCEPT_STATION_INPUT_ID}" class="tmk-station-inline"
-                                    autocomplete="off" spellcheck="false" aria-label="受理航站公司" />
-                            </div>
-                            <div class="tmk-grid" id="tmk-pinned-grid"></div>
-                            <div class="tmk-grid" id="${ROOT_GRID_ID}"></div>
-                            <div class="tmk-grid" id="${SYSTEM_GRID_ID}"></div>
+                    <div id="${HEADER_BAR_ID}" class="tmk-root-title-row">
+                        <button type="button" id="${START_BTN_ID}" class="tmk-h1 tmk-start-btn">开始</button>
+                        <input type="text" id="${ACCEPT_STATION_INPUT_ID}" class="tmk-station-inline"
+                            autocomplete="off" spellcheck="false" aria-label="受理航站公司" />
+                    </div>
+                    <button type="button" id="${NAV_TO_FRONT_ID}" class="tmk-nav-btn" aria-label="返回首页">‹</button>
+                    <button type="button" id="${NAV_TO_MAIN_ID}" class="tmk-nav-btn" aria-label="进入全部菜单">›</button>
+                    <div id="${STARTMENU_ID}">
+                        <section class="tmk-page" id="${FRONT_PAGE_ID}">
+                            <div id="${FRONT_GRID_ID}"></div>
                         </section>
-                        <section class="tmk-page" id="tmk-sub-page">
-                            <h1 class="tmk-h1">业务</h1>
+                        <section class="tmk-page" id="${MAIN_PAGE_ID}">
+                            <div class="tmk-grid" id="${ROOT_GRID_ID}"></div>
+                        </section>
+                        <section class="tmk-page" id="${SUB_PAGE_ID}">
+                            <h2 class="tmk-sub-h2">业务</h2>
                             <div class="tmk-grid" id="${SUB_GRID_ID}"></div>
                         </section>
                     </div>`;
@@ -905,7 +1596,29 @@
                     startThemeBtn.addEventListener('click', (evt) => {
                         evt.preventDefault();
                         evt.stopPropagation();
-                        cycleTheme(document).catch(() => {});
+                        cycleTheme(document).then(() => {
+                            if (state.overlayOpen) renderTiles(document, overlay, menuBtn);
+                        }).catch(() => {});
+                    });
+                }
+                const toMainBtn = document.getElementById(NAV_TO_MAIN_ID);
+                if (toMainBtn) {
+                    toMainBtn.addEventListener('click', (evt) => {
+                        evt.preventDefault();
+                        evt.stopPropagation();
+                        showMainPage(overlay, menuBtn);
+                    });
+                }
+                const toFrontBtn = document.getElementById(NAV_TO_FRONT_ID);
+                if (toFrontBtn) {
+                    toFrontBtn.addEventListener('click', (evt) => {
+                        evt.preventDefault();
+                        evt.stopPropagation();
+                        if (state.page === 'sub') {
+                            showMainPage(overlay, menuBtn);
+                        } else {
+                            showFrontPage(overlay, menuBtn);
+                        }
                     });
                 }
 
@@ -915,11 +1628,10 @@
                 menuBtn.onclick = () => {
                     if (!state.overlayOpen) {
                         overlay.style.display = 'block'; renderTiles(document, overlay, menuBtn);
-                        state.overlayOpen = true; showRootPage(overlay, menuBtn);
+                        state.overlayOpen = true; showFrontPage(overlay, menuBtn);
                         setUiOverlayState(true);
                         setSearchShortcutVisible(true);
-                    } else if (state.showingSub) {
-                        showRootPage(overlay, menuBtn);
+                        updateSlideButtons(overlay);
                     } else {
                         closeStartMenu(overlay, menuBtn);
                     }
